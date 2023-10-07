@@ -1,6 +1,9 @@
 use ndarray::{Array1, Array2};
+use ndarray_linalg::Inverse;
+use ndarray_linalg::Lapack;
 use ndarray_linalg::Scalar;
 
+use crate::Result;
 use crate::{polyfit::Polynomial, distributions::{NormalDistribution, UncorrelatedProduct, DistributionToPower, Mixture, WeightedDistribution, Measure}};
 
 #[derive(Clone, Copy)]
@@ -18,8 +21,8 @@ impl<E: Copy> From<&Measurement<E>> for NormalDistribution<E> {
     }
 }
 
-impl<E: Scalar> Measurement<E> {
-    fn compute_unknown(&self, fit: &Polynomial<E>) -> Self {
+impl<E: Lapack + Scalar> Measurement<E> {
+    fn compute_unknown(&self, fit: &Polynomial<E>) -> Result<Self> {
         // Create the distributions
         let measurement: NormalDistribution<E> = NormalDistribution::from(self);
         let coefficient_distributions: Vec<NormalDistribution<E>> = fit.to_values().iter().map(NormalDistribution::from).collect();
@@ -28,7 +31,16 @@ impl<E: Scalar> Measurement<E> {
 
         let sigma_x = sigma_x(&measurement, fit.degree());
 
-        todo!()
+        let inv_sigma_x = sigma_x.inv()?;
+
+        let variance = sigma_xy.dot(&inv_sigma_x.dot(&sigma_xy));
+
+        let standard_deviation = Scalar::sqrt(variance);
+
+        Ok( Self {
+            value: fit.evaluate_at(self.value),
+            uncertainty: standard_deviation,
+        })
     }
 }
 

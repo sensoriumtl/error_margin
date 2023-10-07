@@ -38,6 +38,13 @@ impl<E> Polynomial<E> {
 }
 
 impl<E: Scalar> Polynomial<E> {
+    pub(crate) fn evaluate_at(&self, value: E) -> E {
+        self.coefficients.iter()
+            .enumerate()
+            .map(|(ii, ci)| *ci * value.powi(i32::try_from(ii).unwrap()))
+            .sum()
+    }
+
     pub(crate) fn to_values(&self) -> Vec<Measurement<E>> {
         match self.standard_deviation.as_ref() {
             Some(standard_deviation) => self.coefficients.iter()
