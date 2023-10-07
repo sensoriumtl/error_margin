@@ -20,8 +20,7 @@ pub struct NormalDistribution<T> {
 
 impl<T: PartialEq> PartialEq for NormalDistribution<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.mean == other.mean
-            && self.standard_deviation == other.standard_deviation
+        self.mean == other.mean && self.standard_deviation == other.standard_deviation
     }
 }
 
@@ -60,7 +59,8 @@ impl<T: Scalar> Moment<T> for NormalDistribution<T> {
             n => {
                 self.mean() * self.moment(n - 1)
                     + T::from_usize(n - 1).expect("usize must fit in `T`")
-                    * self.standard_deviation().powi(2) * self.moment(n - 2)
+                        * self.standard_deviation().powi(2)
+                        * self.moment(n - 2)
             }
         }
     }
@@ -78,7 +78,6 @@ trait Measure<T: Scalar> {
     fn covariance(&self, other: Self) -> T;
 }
 
-
 impl<T: Scalar> Measure<T> for DistributionToPower<NormalDistribution<T>> {
     /// The expectation value of a normal distribution raised to `n` is the `n`th moment of the
     /// underlying distribution $E[x^n]$.
@@ -88,14 +87,22 @@ impl<T: Scalar> Measure<T> for DistributionToPower<NormalDistribution<T>> {
 
     /// The variance of a distribution is $E[x^2] - E[x]^2$
     fn variance(&self) -> T {
-        Self { distribution: self.distribution, power: 2 * self.power }.expectation()
+        Self {
+            distribution: self.distribution,
+            power: 2 * self.power,
+        }
+        .expectation()
             - self.expectation().powi(2)
     }
 
     fn covariance(&self, other: Self) -> T {
         if self.distribution == other.distribution {
             // If the distributions are equal we calculate as E[xy] - E[x]E[y]
-            Self { distribution: self.distribution, power: other.power + self.power }.expectation()
+            Self {
+                distribution: self.distribution,
+                power: other.power + self.power,
+            }
+            .expectation()
                 - self.expectation() * other.expectation()
         } else {
             // If not we assume the two random variables are uncorrelated
@@ -104,7 +111,6 @@ impl<T: Scalar> Measure<T> for DistributionToPower<NormalDistribution<T>> {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -120,7 +126,10 @@ mod tests {
         let standard_deviation = 1.0;
 
         let distribution = DistributionToPower {
-            distribution: NormalDistribution {mean, standard_deviation},
+            distribution: NormalDistribution {
+                mean,
+                standard_deviation,
+            },
             power: 1,
         };
 
@@ -154,13 +163,14 @@ mod tests {
         let powers = [2, 4];
         let expected_results = [1.0, 3.0, 15.0];
 
-
         for (power, expected) in powers.into_iter().zip(expected_results.into_iter()) {
             let distribution = DistributionToPower {
-                distribution: NormalDistribution {mean, standard_deviation},
+                distribution: NormalDistribution {
+                    mean,
+                    standard_deviation,
+                },
                 power,
             };
-
 
             assert_eq!(distribution.expectation(), expected, "failed at {power}");
         }
@@ -174,7 +184,10 @@ mod tests {
         let standard_deviation = rng.gen();
 
         let distribution = DistributionToPower {
-            distribution: NormalDistribution {mean, standard_deviation},
+            distribution: NormalDistribution {
+                mean,
+                standard_deviation,
+            },
             power: 1,
         };
 
@@ -207,7 +220,10 @@ mod tests {
 
         for (power, expected) in powers.into_iter().zip(expected_results.into_iter()) {
             let distribution = DistributionToPower {
-                distribution: NormalDistribution {mean, standard_deviation},
+                distribution: NormalDistribution {
+                    mean,
+                    standard_deviation,
+                },
                 power,
             };
             approx::assert_relative_eq!(distribution.expectation(), expected);
