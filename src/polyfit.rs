@@ -5,6 +5,7 @@ use num_traits::Float;
 use std::ops::{Range, MulAssign};
 
 use crate::Result;
+use crate::margin::Measurement;
 use crate::math::{outer_product, vandermonde};
 
 pub struct Polynomial<E> {
@@ -26,6 +27,26 @@ impl<E: Scalar> From<FitResult<E>> for Polynomial<E> {
             coefficients: value.solution.into_raw_vec(),
             standard_deviation: Some(value.covariance.diag().mapv(ndarray_linalg::Scalar::sqrt).into_raw_vec()),
             window: Some(value.window),
+        }
+    }
+}
+
+impl<E> Polynomial<E> {
+    pub(crate) fn degree(&self) -> usize {
+        self.coefficients.len()
+    }
+}
+
+impl<E: Scalar> Polynomial<E> {
+    pub(crate) fn to_values(&self) -> Vec<Measurement<E>> {
+        match self.standard_deviation.as_ref() {
+            Some(standard_deviation) => self.coefficients.iter()
+                .zip(standard_deviation.iter())
+                .map(|(&value, &uncertainty)| Measurement { value, uncertainty })
+                .collect(),
+            None => self.coefficients.iter()
+                .map(|&value| Measurement { value, uncertainty: E::zero() })
+                .collect()
         }
     }
 }

@@ -15,8 +15,8 @@ use ndarray_linalg::Scalar;
 ///     \mu}{\sigma} \right]
 /// $$
 pub struct NormalDistribution<T> {
-    mean: T,
-    standard_deviation: T,
+    pub(crate) mean: T,
+    pub(crate) standard_deviation: T,
 }
 
 impl<T: PartialEq> PartialEq for NormalDistribution<T> {
@@ -39,27 +39,27 @@ impl<T: Copy> NormalDistribution<T> {
 /// We commonly want to compute distributional properties of normal distributions raised to the
 /// $n$th power.
 pub struct DistributionToPower<D> {
-    distribution: D,
-    power: usize,
+    pub(crate) distribution: D,
+    pub(crate) power: usize,
 }
 
 #[derive(Clone, Copy)]
 /// The product of uncorrelated distributions with separable expectation values
 pub struct UncorrelatedProduct<D> {
-    a: D,
-    b: D,
+    pub(crate) a: D,
+    pub(crate) b: D,
 }
 
 //TODO it is not nice that this has a `T`, whle the other distributions do not..
 #[derive(Clone, Copy)]
 pub struct WeightedDistribution<T, D> {
-    distribution: D,
-    weight: T,
+    pub(crate) distribution: D,
+    pub(crate) weight: T,
 }
 
 #[derive(Clone)]
 /// A mixture distribution is the sum of distributions multiplied by weights
-pub struct Mixture<T, D>(Vec<WeightedDistribution<T, D>>);
+pub struct Mixture<T, D>(pub(crate) Vec<WeightedDistribution<T, D>>);
 
 pub trait Moment<T> {
     fn moment(&self, n: usize) -> T;
@@ -86,7 +86,7 @@ impl<T: Scalar> Moment<T> for NormalDistribution<T> {
 }
 
 /// Interface trait to allow for computation of common properties of probability distributions
-trait Measure<T: Scalar> {
+pub(crate) trait Measure<T: Scalar> {
     /// The variance of a distribution is always $E[x^2] - E[x]^2$
     /// We implement this on the concrete distributions to prevent implementation of a separate
     /// trait for squaring the distribution.
@@ -94,7 +94,7 @@ trait Measure<T: Scalar> {
 
     fn expectation(&self) -> T;
 
-    fn covariance(&self, other: Self) -> T;
+    fn covariance(&self, other: &DistributionToPower<NormalDistribution<T>>) -> T;
 }
 
 impl<T: Scalar> Measure<T> for DistributionToPower<NormalDistribution<T>> {
@@ -114,7 +114,7 @@ impl<T: Scalar> Measure<T> for DistributionToPower<NormalDistribution<T>> {
             - self.expectation().powi(2)
     }
 
-    fn covariance(&self, other: Self) -> T {
+    fn covariance(&self, other: &DistributionToPower<NormalDistribution<T>>) -> T {
         if self.distribution == other.distribution {
             // If the distributions are equal we calculate as E[xy] - E[x]E[y]
             Self {
@@ -149,8 +149,22 @@ impl<T: Scalar> Measure<T> for UncorrelatedProduct<DistributionToPower<NormalDis
             - (self.a.expectation() * self.b.expectation()).powi(2)
     }
 
-    fn covariance(&self, _: Self) -> T {
-        T::zero()
+    fn covariance(&self, other: &DistributionToPower<NormalDistribution<T>>) -> T {
+        if self.a.distribution == other.distribution {
+            Self {
+                a: DistributionToPower { distribution: self.a.distribution, power: self.a.power + other.power },
+                b: self.b
+            }.expectation()
+                - self.expectation() * other.expectation()
+        } else if self.b.distribution == other.distribution {
+            Self {
+                a: self.a,
+                b: DistributionToPower { distribution: self.b.distribution, power: self.b.power + other.power },
+            }.expectation()
+                - self.expectation() * other.expectation()
+        } else {
+            T::zero()
+        }
     }
 }
 
@@ -203,8 +217,33 @@ impl<T: Scalar> Measure<T> for Mixture<T, DistributionToPower<NormalDistribution
         expectation_value_of_square - expectation_value.powi(2)
     }
 
-    fn covariance(&self, _: Self) -> T {
-        T::zero()
+    fn covariance(&self, other: &DistributionToPower<NormalDistribution<T>>) -> T {
+        self.0.iter()
+            .map(|WeightedDistribution { distribution, weight }| *weight * distribution.covariance(other))
+            .sum()
+    }
+}
+
+impl<T: Scalar> Measure<T> for Mixture<T, UncorrelatedProduct<DistributionToPower<NormalDistribution<T>>>> {
+    /// The expectation value of a normal distribution raised to `n` is the `n`th moment of the
+    /// underlying distribution $E[x^n]$.
+    fn expectation(&self) -> T {
+        self.0.iter()
+            .map(|WeightedDistribution {
+                distribution: UncorrelatedProduct { a, b }, weight
+            }| *weight * a.distribution.moment(a.power) * b.distribution.moment(b.power)
+            )
+            .sum()
+    }
+
+    fn variance(&self) -> T {
+        unimplemented!()
+    }
+
+    fn covariance(&self, other: &DistributionToPower<NormalDistribution<T>>) -> T {
+        self.0.iter()
+            .map(|WeightedDistribution { distribution, weight }| *weight * distribution.covariance(other))
+            .sum()
     }
 }
 
