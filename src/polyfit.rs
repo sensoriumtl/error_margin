@@ -1,12 +1,12 @@
-use ndarray::{s, Array0, Array1, Array2, Array, Axis, ScalarOperand};
-use ndarray_linalg::{Inverse, LeastSquaresSvd, Scalar, Lapack};
+use ndarray::{s, Array, Array0, Array1, Array2, Axis, ScalarOperand};
+use ndarray_linalg::{Inverse, Lapack, LeastSquaresSvd, Scalar};
 use num_traits::Float;
 
-use std::ops::{Range, MulAssign};
+use std::ops::{MulAssign, Range};
 
-use crate::Result;
 use crate::margin::Measurement;
 use crate::math::{outer_product, vandermonde};
+use crate::Result;
 
 pub struct Polynomial<E> {
     /// Polynomial coefficients stored in order of ascending power
@@ -25,7 +25,13 @@ impl<E: Scalar> From<FitResult<E>> for Polynomial<E> {
     fn from(value: FitResult<E>) -> Self {
         Self {
             coefficients: value.solution.into_raw_vec(),
-            standard_deviation: Some(value.covariance.diag().mapv(ndarray_linalg::Scalar::sqrt).into_raw_vec()),
+            standard_deviation: Some(
+                value
+                    .covariance
+                    .diag()
+                    .mapv(ndarray_linalg::Scalar::sqrt)
+                    .into_raw_vec(),
+            ),
             window: Some(value.window),
         }
     }
@@ -39,7 +45,8 @@ impl<E> Polynomial<E> {
 
 impl<E: Scalar> Polynomial<E> {
     pub(crate) fn evaluate_at(&self, value: E) -> E {
-        self.coefficients.iter()
+        self.coefficients
+            .iter()
             .enumerate()
             .map(|(ii, ci)| *ci * value.powi(i32::try_from(ii).unwrap()))
             .sum()
@@ -47,13 +54,20 @@ impl<E: Scalar> Polynomial<E> {
 
     pub(crate) fn to_values(&self) -> Vec<Measurement<E>> {
         match self.standard_deviation.as_ref() {
-            Some(standard_deviation) => self.coefficients.iter()
+            Some(standard_deviation) => self
+                .coefficients
+                .iter()
                 .zip(standard_deviation.iter())
                 .map(|(&value, &uncertainty)| Measurement { value, uncertainty })
                 .collect(),
-            None => self.coefficients.iter()
-                .map(|&value| Measurement { value, uncertainty: E::zero() })
-                .collect()
+            None => self
+                .coefficients
+                .iter()
+                .map(|&value| Measurement {
+                    value,
+                    uncertainty: E::zero(),
+                })
+                .collect(),
         }
     }
 }
@@ -72,7 +86,6 @@ pub enum Scaling {
     Scaled,
     Unscaled,
 }
-
 
 pub fn polyfit<E: Copy + Float + Lapack + MulAssign + PartialOrd + Scalar + ScalarOperand>(
     x: &[E],
@@ -102,8 +115,7 @@ pub fn polyfit<E: Copy + Float + Lapack + MulAssign + PartialOrd + Scalar + Scal
             return Err("x-elements and weights must be of equal length".into());
         }
 
-        let weights: Array1<E> =
-            Array::from_iter(weights.iter().copied()).into_shape(x.len())?;
+        let weights: Array1<E> = Array::from_iter(weights.iter().copied()).into_shape(x.len())?;
         rhs *= &weights;
 
         for (ii, weight) in weights.iter().enumerate() {
@@ -136,8 +148,16 @@ pub fn polyfit<E: Copy + Float + Lapack + MulAssign + PartialOrd + Scalar + Scal
     // These unwraps are safe because we Error at the start of the function if x contains any NaN
     // or infinite values. This means if `x` contains at least two unique elements we can safely
     // find a minimimum and a maximum.
-    let x_min = x.into_iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap().to_owned();
-    let x_max = x.into_iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap().to_owned();
+    let x_min = x
+        .into_iter()
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap()
+        .to_owned();
+    let x_max = x
+        .into_iter()
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap()
+        .to_owned();
 
     Ok(FitResult {
         solution,
@@ -147,9 +167,7 @@ pub fn polyfit<E: Copy + Float + Lapack + MulAssign + PartialOrd + Scalar + Scal
         residual_sum_of_squares: result.residual_sum_of_squares,
         window: x_min..x_max,
     })
-
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -158,7 +176,6 @@ mod tests {
 
     use ndarray_rand::rand::{Rng, SeedableRng};
     use rand_isaac::Isaac64Rng;
-
 
     #[test]
     fn quadratic_polynomials_are_fit_correctly() {

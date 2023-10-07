@@ -22,9 +22,9 @@ pub fn outer_product<T: LinalgScalar>(u: &Array1<T>, v: &Array1<T>) -> Result<Ar
 ///
 /// The Vandermonde matrix is ...
 pub fn vandermonde<T: Copy + Scalar>(x: &[T], degree: usize) -> Result<Array2<T>> {
-    let vals = x
-        .iter()
-        .flat_map(|xi| (0..=degree).map(|i| xi.powi(i32::try_from(i).expect("{i} doesn't fit in `i32`"))));
+    let vals = x.iter().flat_map(|xi| {
+        (0..=degree).map(|i| xi.powi(i32::try_from(i).expect("{i} doesn't fit in `i32`")))
+    });
 
     Ok(Array::from_iter(vals).into_shape((x.len(), degree + 1))?)
 }
@@ -103,5 +103,4 @@ mod tests {
         approx::assert_relative_eq!(determinant, product_of_differences);
         Ok(())
     }
-
 }
