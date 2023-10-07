@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use ndarray_linalg::Scalar;
 
 #[derive(Clone, Copy)]
@@ -42,7 +43,25 @@ pub struct DistributionToPower<D> {
     power: usize,
 }
 
-trait Moment<T> {
+#[derive(Clone, Copy)]
+/// The product of uncorrelated distributions with separable expectation values
+pub struct UncorrelatedProduct<D> {
+    a: D,
+    b: D,
+}
+
+//TODO it is not nice that this has a `T`, whle the other distributions do not..
+#[derive(Clone, Copy)]
+pub struct WeightedDistribution<T, D> {
+    distribution: D,
+    weight: T,
+}
+
+#[derive(Clone)]
+/// A mixture distribution is the sum of distributions multiplied by weights
+pub struct Mixture<T, D>(Vec<WeightedDistribution<T, D>>);
+
+pub trait Moment<T> {
     fn moment(&self, n: usize) -> T;
 }
 
@@ -109,6 +128,83 @@ impl<T: Scalar> Measure<T> for DistributionToPower<NormalDistribution<T>> {
             // In this case E[xy] = E[x]E[y] and Cov(x, y) = 0
             T::zero()
         }
+    }
+}
+
+impl<T: Scalar> Measure<T> for UncorrelatedProduct<DistributionToPower<NormalDistribution<T>>> {
+    /// The expectation value of a normal distribution raised to `n` is the `n`th moment of the
+    /// underlying distribution $E[x^n]$.
+    fn expectation(&self) -> T {
+        self.a.distribution.moment(self.a.power)
+             * self.b.distribution.moment(self.b.power)
+    }
+
+    /// The variance of a distribution is $E[x^2] - E[x]^2$
+    /// As the product is comprised of uncorrelated distributions we can write
+    ///
+    /// $ \sigma^2 = E[(xy)^2] - E[xy]^2 = E[x^2]E[y^2] - (E[x] E[y])^2
+    fn variance(&self) -> T {
+        DistributionToPower { distribution: self.a.distribution, power: self.a.power * 2 }.expectation()
+            * DistributionToPower { distribution: self.b.distribution, power: self.b.power * 2 }.expectation()
+            - (self.a.expectation() * self.b.expectation()).powi(2)
+    }
+
+    fn covariance(&self, _: Self) -> T {
+        T::zero()
+    }
+}
+
+impl<T: Scalar> Measure<T> for Mixture<T, DistributionToPower<NormalDistribution<T>>> {
+    /// The expectation value of a normal distribution raised to `n` is the `n`th moment of the
+    /// underlying distribution $E[x^n]$.
+    fn expectation(&self) -> T {
+        self.0.iter()
+            .map(|WeightedDistribution {
+                distribution: DistributionToPower { distribution, power },
+                weight
+            }| *weight * distribution.moment(*power)
+            )
+            .sum()
+    }
+
+    fn variance(&self) -> T {
+        let expectation_value_of_square: T = self
+            .0
+            .iter()
+            .cartesian_product(self.0.iter())
+            .map(|(first, second)| {
+                if first.distribution.distribution != second.distribution.distribution {
+                    panic!("only implemented for distributions with constant mean");
+                }
+                let product_weight = first.weight * second.weight;
+                let product_distribution = DistributionToPower {
+                    distribution: NormalDistribution {
+                        mean: first.distribution.distribution.mean(),
+                        standard_deviation: first.distribution.distribution.standard_deviation(),
+                    },
+                    power: first.distribution.power + second.distribution.power
+                };
+                product_weight * product_distribution.expectation()
+            })
+            .sum();
+
+
+        let expectation_value: T = self
+            .0
+            .iter()
+            .map(
+                |WeightedDistribution {
+                     distribution,
+                     weight,
+                 }| *weight * distribution.variance(),
+            )
+            .sum();
+
+        expectation_value_of_square - expectation_value.powi(2)
+    }
+
+    fn covariance(&self, _: Self) -> T {
+        T::zero()
     }
 }
 

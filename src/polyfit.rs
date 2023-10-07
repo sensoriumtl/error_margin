@@ -1,5 +1,6 @@
 use ndarray::{s, Array0, Array1, Array2, Array, Axis, ScalarOperand};
 use ndarray_linalg::{Inverse, LeastSquaresSvd, Scalar, Lapack};
+use num_traits::Float;
 
 use std::ops::{Range, MulAssign};
 
@@ -44,17 +45,35 @@ pub enum Scaling {
     Unscaled,
 }
 
-pub fn polyfit<E: Copy + Lapack + MulAssign + Ord + Scalar + ScalarOperand>(
+
+pub fn polyfit<E: Copy + Float + Lapack + MulAssign + PartialOrd + Scalar + ScalarOperand>(
     x: &[E],
     y: &[E],
     degree: usize,
     maybe_weights: Option<&[E]>,
     covariance: Scaling,
 ) -> Result<FitResult<E>> {
+    if x.iter().any(|&ele| !ele.is_finite()) {
+        return Err("x-elements contain infinite or NaN values".into());
+    }
+    if y.iter().any(|&ele| !ele.is_finite()) {
+        return Err("y-elements contain infinite or NaN values".into());
+    }
+    if x.len() != y.len() {
+        return Err("x-elements and y-elements must be of equal length".into());
+    }
+
     let vander = vandermonde(x, degree)?;
     let mut lhs: Array2<E> = vander.to_owned();
     let mut rhs: Array1<E> = Array::from_iter(y.iter().copied()).into_shape(x.len())?;
     if let Some(weights) = maybe_weights {
+        if weights.iter().any(|&ele| !ele.is_finite()) {
+            return Err("weights-elements contain infinite or NaN values".into());
+        }
+        if x.len() != weights.len() {
+            return Err("x-elements and weights must be of equal length".into());
+        }
+
         let weights: Array1<E> =
             Array::from_iter(weights.iter().copied()).into_shape(x.len())?;
         rhs *= &weights;
@@ -66,7 +85,7 @@ pub fn polyfit<E: Copy + Lapack + MulAssign + Ord + Scalar + ScalarOperand>(
     }
 
     let scaling: Array1<E> = lhs
-        .mapv(|val| val.powi(2))
+        .mapv(|val| Scalar::powi(val, 2))
         .sum_axis(Axis(0))
         .mapv(ndarray_linalg::Scalar::sqrt);
 
@@ -86,8 +105,11 @@ pub fn polyfit<E: Copy + Lapack + MulAssign + Ord + Scalar + ScalarOperand>(
         covariance_matrix = covariance_matrix * factor;
     };
 
-    let x_min = x.iter().min().unwrap().to_owned();
-    let x_max = x.iter().max().unwrap().to_owned();
+    // These unwraps are safe because we Error at the start of the function if x contains any NaN
+    // or infinite values. This means if `x` contains at least two unique elements we can safely
+    // find a minimimum and a maximum.
+    let x_min = x.into_iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap().to_owned();
+    let x_max = x.into_iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap().to_owned();
 
     Ok(FitResult {
         solution,
@@ -98,4 +120,67 @@ pub fn polyfit<E: Copy + Lapack + MulAssign + Ord + Scalar + ScalarOperand>(
         window: x_min..x_max,
     })
 
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::polyfit;
+    use super::Scaling;
+
+    use ndarray_rand::rand::{Rng, SeedableRng};
+    use rand_isaac::Isaac64Rng;
+
+
+    #[test]
+    fn quadratic_polynomials_are_fit_correctly() {
+        let degree = 2;
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+        let num_samples = rng.gen_range(10..255);
+        let coeffs = (0..=degree).map(|_| rng.gen()).collect::<Vec<f64>>();
+        let x = (0..num_samples).map(|n| n as f64).collect::<Vec<_>>();
+        let y = x
+            .iter()
+            .map(|x| {
+                coeffs
+                    .iter()
+                    .enumerate()
+                    .map(|(ii, ci)| ci * x.powi(ii as i32))
+                    .sum()
+            })
+            .collect::<Vec<_>>();
+
+        let result = polyfit(&x, &y, degree, None, Scaling::Scaled).unwrap();
+
+        for (coeff, fitted) in coeffs.into_iter().zip(result.solution.into_iter()) {
+            approx::assert_relative_eq!(coeff, fitted, max_relative = 1e-10);
+        }
+    }
+
+    #[test]
+    fn cubic_polynomials_are_fit_correctly() {
+        let degree = 3;
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+        let num_samples = rng.gen_range(10..255);
+        let coeffs = (0..=degree).map(|_| rng.gen()).collect::<Vec<f64>>();
+        let x = (0..num_samples).map(|n| n as f64).collect::<Vec<_>>();
+        let y = x
+            .iter()
+            .map(|x| {
+                coeffs
+                    .iter()
+                    .enumerate()
+                    .map(|(ii, ci)| ci * x.powi(ii as i32))
+                    .sum()
+            })
+            .collect::<Vec<_>>();
+
+        let result = polyfit(&x, &y, degree, None, Scaling::Scaled).unwrap();
+
+        for (coeff, fitted) in coeffs.into_iter().zip(result.solution.into_iter()) {
+            approx::assert_relative_eq!(coeff, fitted, max_relative = 1e-10);
+        }
+    }
 }
