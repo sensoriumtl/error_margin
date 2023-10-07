@@ -25,11 +25,11 @@ impl<T: PartialEq> PartialEq for NormalDistribution<T> {
 }
 
 impl<T: Copy> NormalDistribution<T> {
-    fn mean(&self) -> T {
+    const fn mean(&self) -> T {
         self.mean
     }
 
-    fn standard_deviation(&self) -> T {
+    const fn standard_deviation(&self) -> T {
         self.standard_deviation
     }
 }
