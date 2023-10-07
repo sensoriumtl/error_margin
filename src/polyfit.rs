@@ -53,22 +53,24 @@ impl<E: Scalar> Polynomial<E> {
     }
 
     pub(crate) fn to_values(&self) -> Vec<Measurement<E>> {
-        match self.standard_deviation.as_ref() {
-            Some(standard_deviation) => self
-                .coefficients
-                .iter()
-                .zip(standard_deviation.iter())
-                .map(|(&value, &uncertainty)| Measurement { value, uncertainty })
-                .collect(),
-            None => self
-                .coefficients
-                .iter()
-                .map(|&value| Measurement {
-                    value,
-                    uncertainty: E::zero(),
-                })
-                .collect(),
-        }
+        self.standard_deviation.as_ref().map_or_else(
+            || {
+                self.coefficients
+                    .iter()
+                    .map(|&value| Measurement {
+                        value,
+                        uncertainty: E::zero(),
+                    })
+                    .collect()
+            },
+            |standard_deviation| {
+                self.coefficients
+                    .iter()
+                    .zip(standard_deviation.iter())
+                    .map(|(&value, &uncertainty)| Measurement { value, uncertainty })
+                    .collect()
+            },
+        )
     }
 }
 
@@ -149,12 +151,12 @@ pub fn polyfit<E: Copy + Float + Lapack + MulAssign + PartialOrd + Scalar + Scal
     // or infinite values. This means if `x` contains at least two unique elements we can safely
     // find a minimimum and a maximum.
     let x_min = x
-        .into_iter()
+        .iter()
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap()
         .to_owned();
     let x_max = x
-        .into_iter()
+        .iter()
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap()
         .to_owned();

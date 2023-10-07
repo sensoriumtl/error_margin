@@ -13,14 +13,14 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-pub(crate) struct Measurement<E> {
+pub struct Measurement<E> {
     pub(crate) value: E,
     pub(crate) uncertainty: E,
 }
 
 impl<E: Copy> From<&Measurement<E>> for NormalDistribution<E> {
     fn from(value: &Measurement<E>) -> Self {
-        NormalDistribution {
+        Self {
             mean: value.value,
             standard_deviation: value.uncertainty,
         }
@@ -60,29 +60,27 @@ fn sigma_xy<E: Scalar>(
 ) -> Array1<E> {
     let mut sigma_xy: Array1<E> = Array1::zeros(coeffs.len());
 
-    let product_distributions: Vec<
-        UncorrelatedProduct<DistributionToPower<NormalDistribution<E>>>,
-    > = coeffs
-        .iter()
-        .enumerate()
-        .skip(1)
-        .map(|(ii, coeff_dist)| UncorrelatedProduct {
-            a: DistributionToPower {
-                distribution: *measurement,
-                power: ii,
-            },
-            b: DistributionToPower {
-                distribution: *coeff_dist,
-                power: 1,
-            },
-        })
-        .collect();
+    let product_distributions =
+        coeffs
+            .iter()
+            .enumerate()
+            .skip(1)
+            .map(|(ii, coeff_dist)| UncorrelatedProduct {
+                a: DistributionToPower {
+                    distribution: *measurement,
+                    power: ii,
+                },
+                b: DistributionToPower {
+                    distribution: *coeff_dist,
+                    power: 1,
+                },
+            });
     let weights = vec![E::one(); coeffs.len()];
     let mixture: Mixture<E, UncorrelatedProduct<DistributionToPower<NormalDistribution<E>>>> =
         Mixture(
             product_distributions
                 .into_iter()
-                .zip(weights.into_iter())
+                .zip(weights)
                 .map(|(d, w)| WeightedDistribution {
                     distribution: d,
                     weight: w,

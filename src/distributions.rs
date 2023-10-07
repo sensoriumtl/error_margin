@@ -86,7 +86,7 @@ impl<T: Scalar> Moment<T> for NormalDistribution<T> {
 }
 
 /// Interface trait to allow for computation of common properties of probability distributions
-pub(crate) trait Measure<T: Scalar> {
+pub trait Measure<T: Scalar> {
     /// The variance of a distribution is always $E[x^2] - E[x]^2$
     /// We implement this on the concrete distributions to prevent implementation of a separate
     /// trait for squaring the distribution.
@@ -114,7 +114,7 @@ impl<T: Scalar> Measure<T> for DistributionToPower<NormalDistribution<T>> {
             - self.expectation().powi(2)
     }
 
-    fn covariance(&self, other: &DistributionToPower<NormalDistribution<T>>) -> T {
+    fn covariance(&self, other: &Self) -> T {
         if self.distribution == other.distribution {
             // If the distributions are equal we calculate as E[xy] - E[x]E[y]
             Self {
@@ -208,9 +208,10 @@ impl<T: Scalar> Measure<T> for Mixture<T, DistributionToPower<NormalDistribution
             .iter()
             .cartesian_product(self.0.iter())
             .map(|(first, second)| {
-                if first.distribution.distribution != second.distribution.distribution {
-                    panic!("only implemented for distributions with constant mean");
-                }
+                assert!(
+                    !(first.distribution.distribution != second.distribution.distribution),
+                    "only implemented for distributions with constant mean"
+                );
                 let product_weight = first.weight * second.weight;
                 let product_distribution = DistributionToPower {
                     distribution: NormalDistribution {
