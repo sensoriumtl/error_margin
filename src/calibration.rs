@@ -127,10 +127,10 @@ impl<E: Scalar + std::fmt::Debug> Sensor<E> {
     }
 }
 
-enum Set {}
-enum Unset {}
+pub(crate) enum Set {}
+pub(crate) enum Unset {}
 
-struct SensorBuilder<E: Scalar, N> {
+pub(crate) struct SensorBuilder<E: Scalar, N> {
     target: Gas,
     operation_frequency: E,
     noise_equivalent_power: E,
@@ -140,7 +140,7 @@ struct SensorBuilder<E: Scalar, N> {
 }
 
 impl<E: Scalar, N> SensorBuilder<E, N> {
-    fn new(
+    pub(crate) fn new(
         target: Gas,
         noise_equivalent_power: E,
         operation_frequency: E,
@@ -163,7 +163,10 @@ impl<E: Scalar, N> SensorBuilder<E, N> {
 }
 
 impl<E: Scalar> SensorBuilder<E, Unset> {
-    fn with_calibration(mut self, calibration_data: CalibrationData<E>) -> SensorBuilder<E, Set> {
+    pub(crate) fn with_calibration(
+        mut self,
+        calibration_data: CalibrationData<E>,
+    ) -> SensorBuilder<E, Set> {
         self.raw_calibration_data.push(calibration_data);
         SensorBuilder {
             target: self.target,
@@ -177,7 +180,7 @@ impl<E: Scalar> SensorBuilder<E, Unset> {
 }
 
 impl<E: Float + Lapack + Real + Scalar + ScalarOperand> SensorBuilder<E, Set> {
-    fn build(self) -> Result<Sensor<E>> {
+    pub(crate) fn build(self) -> Result<Sensor<E>> {
         let mut crosstalk = HashMap::new();
         let mut calibration = None;
         for calibration_data in self.raw_calibration_data {
@@ -222,10 +225,10 @@ fn generate_fit<E: Float + Lapack + Real + Scalar + ScalarOperand>(
     Ok(fit)
 }
 
-struct CalibrationData<E: Scalar> {
-    gas: Gas,
-    concentration: Vec<E>,
-    raw_measurements: Vec<Measurement<E>>,
+pub(crate) struct CalibrationData<E: Scalar> {
+    pub(crate) gas: Gas,
+    pub(crate) concentration: Vec<E>,
+    pub(crate) raw_measurements: Vec<Measurement<E>>,
 }
 
 #[derive(Deserialize)]
@@ -274,10 +277,10 @@ impl<E: Scalar + Copy + DeserializeOwned> CalibrationData<E> {
 }
 
 pub struct Measurement<E: Scalar> {
-    raw_signal: E,
-    raw_reference: E,
-    emergent_signal: E,
-    emergent_reference: E,
+    pub(crate) raw_signal: E,
+    pub(crate) raw_reference: E,
+    pub(crate) emergent_signal: E,
+    pub(crate) emergent_reference: E,
 }
 
 impl<E: Real + Scalar> Measurement<E> {
@@ -290,7 +293,7 @@ impl<E: Real + Scalar> Measurement<E> {
     fn weight(&self, noise_equivalent_power: E, operation_frequency: E) -> E {
         let standard_deviation = noise_equivalent_power
             * Scalar::sqrt(operation_frequency)
-            * (self.raw_reference + self.raw_reference)
+            * (self.raw_signal + self.raw_reference)
             / Scalar::powi(self.raw_signal, 2);
 
         E::one() / Scalar::powi(standard_deviation, 2)

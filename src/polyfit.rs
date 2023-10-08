@@ -74,6 +74,7 @@ impl<E: Scalar> Polynomial<E> {
     }
 }
 
+#[derive(Clone)]
 pub struct FitResult<E: Scalar> {
     solution: Array1<E>,
     covariance: Array2<E>,
@@ -86,6 +87,16 @@ pub struct FitResult<E: Scalar> {
 impl<E: Scalar> FitResult<E> {
     pub const fn solution(&self) -> &Array1<E> {
         &self.solution
+    }
+
+    pub const fn window(&self) -> &Range<E> {
+        &self.window
+    }
+}
+
+impl<E: PartialOrd + Scalar> FitResult<E> {
+    pub fn window_contains(&self, value: &E) -> bool {
+        self.window.contains(value)
     }
 }
 

@@ -1,3 +1,4 @@
+use ndarray::ScalarOperand;
 use ndarray::{Array1, Array2};
 use ndarray_linalg::Inverse;
 use ndarray_linalg::Lapack;
@@ -12,10 +13,19 @@ use crate::{
     polyfit::Polynomial,
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Measurement<E> {
     pub(crate) value: E,
     pub(crate) uncertainty: E,
+}
+
+impl<E: Scalar> Measurement<E> {
+    pub(crate) fn from_centroid(value: E) -> Self {
+        Self {
+            value,
+            uncertainty: E::zero(),
+        }
+    }
 }
 
 impl<E: Copy> From<&Measurement<E>> for NormalDistribution<E> {
@@ -27,8 +37,8 @@ impl<E: Copy> From<&Measurement<E>> for NormalDistribution<E> {
     }
 }
 
-impl<E: Lapack + Scalar> Measurement<E> {
-    fn compute_unknown(&self, fit: &Polynomial<E>) -> Result<Self> {
+impl<E: Lapack + Scalar + ScalarOperand> Measurement<E> {
+    pub(crate) fn compute_unknown(&self, fit: &Polynomial<E>) -> Result<Self> {
         // Create the distributions
         let measurement: NormalDistribution<E> = NormalDistribution::from(self);
         let coefficient_distributions: Vec<NormalDistribution<E>> = fit
@@ -38,9 +48,7 @@ impl<E: Lapack + Scalar> Measurement<E> {
             .collect();
 
         let sigma_xy = sigma_xy(&measurement, &coefficient_distributions);
-
-        let sigma_x = sigma_x(&measurement, fit.degree());
-
+        let sigma_x = sigma_x(&measurement, fit.degree()) / E::from(1e-10).unwrap();
         let inv_sigma_x = sigma_x.inv()?;
 
         let variance = sigma_xy.dot(&inv_sigma_x.dot(&sigma_xy));
@@ -109,7 +117,7 @@ fn sigma_x<E: Scalar>(measurement: &NormalDistribution<E>, degree: usize) -> Arr
         for jj in 0..degree {
             let m_jj = DistributionToPower {
                 distribution: *measurement,
-                power: ii + 1,
+                power: jj + 1,
             };
             sigma_x[[ii, jj]] = m_ii.covariance(&m_jj);
         }
