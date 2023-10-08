@@ -124,3 +124,177 @@ fn sigma_x<E: Scalar>(measurement: &NormalDistribution<E>, degree: usize) -> Arr
     }
     sigma_x
 }
+
+#[cfg(test)]
+mod test {
+    use std::collections::HashMap;
+
+    use itertools::Itertools;
+    use ndarray_rand::rand::{Rng, SeedableRng};
+    use rand_isaac::Isaac64Rng;
+
+    use crate::distributions::{DistributionToPower, Measure, NormalDistribution};
+
+    use super::sigma_x;
+
+    #[test]
+    fn polynomial_covariance_matrix_diagonal_is_generated_correctly() {
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+
+        let degree = rng.gen_range(2..10);
+
+        let distribution: NormalDistribution<f64> = NormalDistribution {
+            mean: rng.gen(),
+            standard_deviation: rng.gen(),
+        };
+
+        let calculated = sigma_x(&distribution, degree);
+
+        // Check the diagonal elements
+        for (ii, &calculated) in calculated.diag().into_iter().enumerate() {
+            let expected: f64 = DistributionToPower {
+                distribution: distribution.clone(),
+                power: ii + 1,
+            }
+            .variance();
+            approx::assert_relative_eq!(calculated, expected);
+        }
+    }
+
+    #[test]
+    fn polynomial_covariance_matrix_diagonal_is_hermitian() {
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+
+        let degree = rng.gen_range(2..10);
+
+        let distribution: NormalDistribution<f64> = NormalDistribution {
+            mean: rng.gen(),
+            standard_deviation: rng.gen(),
+        };
+
+        let calculated = sigma_x(&distribution, degree);
+
+        for (ii, jj) in (0..degree).tuple_combinations().filter(|(ii, jj)| ii != jj) {
+            approx::assert_relative_eq!(calculated[[ii, jj]], calculated[[jj, ii]]);
+        }
+    }
+
+    #[test]
+    fn polynomial_covariance_matrix_upper_triangular_is_correct() {
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+
+        let degree = rng.gen_range(2..10);
+
+        let distribution: NormalDistribution<f64> = NormalDistribution {
+            mean: rng.gen(),
+            standard_deviation: rng.gen(),
+        };
+
+        let calculated = sigma_x(&distribution, degree);
+
+        for (ii, jj) in (0..degree).tuple_combinations().filter(|(ii, jj)| ii != jj) {
+            let distribution_ii = DistributionToPower {
+                distribution: distribution.clone(),
+                power: ii + 1,
+            };
+            let distribution_jj = DistributionToPower {
+                distribution: distribution.clone(),
+                power: jj + 1,
+            };
+            let expected = distribution_ii.covariance(&distribution_jj);
+            approx::assert_relative_eq!(calculated[[ii, jj]], expected);
+        }
+    }
+
+    #[test]
+    fn polynomial_covariance_matrix_upper_triangular_matches_tabulated() {
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+
+        let degree = 5;
+
+        let mean = rng.gen();
+        let standard_deviation = rng.gen();
+
+        let distribution: NormalDistribution<f64> = NormalDistribution {
+            mean,
+            standard_deviation,
+        };
+
+        let calculated = sigma_x(&distribution, degree);
+
+        let mut from_mathematica = HashMap::new();
+        from_mathematica.insert((0, 1), 2. * mean * standard_deviation.powi(2));
+        from_mathematica.insert(
+            (0, 2),
+            3. * standard_deviation.powi(2) * (mean.powi(2) + standard_deviation.powi(2)),
+        );
+        from_mathematica.insert(
+            (0, 3),
+            4. * mean
+                * standard_deviation.powi(2)
+                * (mean.powi(2) + 3. * standard_deviation.powi(2)),
+        );
+        from_mathematica.insert(
+            (0, 4),
+            5. * standard_deviation.powi(2)
+                * (mean.powi(4)
+                    + 6. * mean.powi(2) * standard_deviation.powi(2)
+                    + 3. * standard_deviation.powi(4)),
+        );
+        from_mathematica.insert(
+            (1, 2),
+            6. * mean
+                * standard_deviation.powi(2)
+                * (mean.powi(2) + 2. * standard_deviation.powi(2)),
+        );
+        from_mathematica.insert(
+            (1, 3),
+            4. * standard_deviation.powi(2)
+                * (2. * mean.powi(4)
+                    + 9. * mean.powi(2) * standard_deviation.powi(2)
+                    + 3. * standard_deviation.powi(4)),
+        );
+        from_mathematica.insert(
+            (1, 4),
+            10. * mean
+                * standard_deviation.powi(2)
+                * (mean.powi(4)
+                    + 8. * mean.powi(2) * standard_deviation.powi(2)
+                    + 9. * standard_deviation.powi(4)),
+        );
+        from_mathematica.insert(
+            (2, 3),
+            12. * mean
+                * standard_deviation.powi(2)
+                * (mean.powi(4)
+                    + 7. * mean.powi(2) * standard_deviation.powi(2)
+                    + 8. * standard_deviation.powi(4)),
+        );
+        from_mathematica.insert(
+            (2, 4),
+            15. * standard_deviation.powi(2)
+                * (mean.powi(6)
+                    + 11. * mean.powi(4) * standard_deviation.powi(2)
+                    + 25. * mean.powi(2) * standard_deviation.powi(4)
+                    + 7. * standard_deviation.powi(6)),
+        );
+        from_mathematica.insert(
+            (3, 4),
+            20. * mean
+                * standard_deviation.powi(2)
+                * (mean.powi(6)
+                    + 15. * mean.powi(4) * standard_deviation.powi(2)
+                    + 57. * mean.powi(2) * standard_deviation.powi(4)
+                    + 45. * standard_deviation.powi(6)),
+        );
+
+        for (ii, jj) in (0..degree).tuple_combinations().filter(|(ii, jj)| ii != jj) {
+            let expected = from_mathematica.get(&(ii, jj)).unwrap();
+            approx::assert_relative_eq!(calculated[[ii, jj]], expected, max_relative = 1e-10);
+        }
+    }
+}

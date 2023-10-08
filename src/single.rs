@@ -105,8 +105,7 @@ mod test {
             .sample_iter(Alphanumeric)
             .take(3)
             .map(char::from)
-            .collect::<String>()
-        );
+            .collect::<String>());
 
         let calibration = CalibrationData {
             gas: target.clone(),
@@ -142,6 +141,65 @@ mod test {
                 },
                 &sensor,
             )?;
+            approx::assert_relative_eq!(actual, reconstruction.value, max_relative = 1e-10);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn values_are_reconstructed_with_finite_measurement_error() -> Result<()> {
+        const DEGREE: usize = 5;
+
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+
+        let num_samples = rng.gen_range(10..255);
+        let start = rng.gen();
+        let end = rng.gen_range(2.0..10.0) * start;
+        let window = Range { start, end };
+        let polynomial: GeneratedPolynomial<DEGREE> =
+            generate_polynomial(&mut rng, num_samples, window);
+
+        let target = Gas((&mut rng)
+            .sample_iter(Alphanumeric)
+            .take(3)
+            .map(char::from)
+            .collect::<String>());
+
+        let calibration = CalibrationData {
+            gas: target.clone(),
+            concentration: polynomial.x.clone(),
+            raw_measurements: polynomial
+                .y
+                .clone()
+                .into_iter()
+                .map(|log_signal| Measurement {
+                    raw_signal: 10f64.powf(log_signal),
+                    raw_reference: 1.0,
+                    emergent_signal: 1.0,
+                    emergent_reference: 1.0,
+                })
+                .collect(),
+        };
+
+        let sensor = SensorBuilder::new(target, rng.gen(), rng.gen(), DEGREE)
+            .with_calibration(calibration)
+            .build()?;
+
+        for (value, actual) in polynomial
+            .x
+            .into_iter()
+            .zip(polynomial.y.into_iter())
+            .skip(1)
+            .take_while(|(x, _)| sensor.calibration().window_contains(x))
+        {
+            let measurement = crate::margin::Measurement {
+                value,
+                uncertainty: (value * 0.1).sqrt(),
+            };
+            let reconstruction = reconstruct(&measurement, &sensor)?;
+            // dbg!(measurement, actual, reconstruction);
             approx::assert_relative_eq!(actual, reconstruction.value, max_relative = 1e-10);
         }
 
