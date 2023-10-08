@@ -77,7 +77,7 @@ mod tests {
 
         for (ii, data_point) in data_points.iter().enumerate() {
             for jj in 0..=degree {
-                let expected = data_point.powi(jj as i32);
+                let expected = data_point.powi(i32::try_from(jj).unwrap());
                 let actual = vandermonde[[ii, jj]];
                 approx::assert_relative_eq!(expected, actual);
             }

@@ -308,8 +308,8 @@ mod tests {
             power: 1,
         };
 
-        assert_eq!(distribution.expectation(), mean);
-        assert_eq!(distribution.variance(), 1.0);
+        approx::assert_relative_eq!(distribution.expectation(), mean);
+        approx::assert_relative_eq!(distribution.variance(), 1.0);
     }
 
     proptest! {
@@ -318,7 +318,7 @@ mod tests {
         fn odd_powers_of_unit_normal_distribution_have_correct_expectation_value(
             power in (1..20usize)
                 .prop_filter("Values must not divisible by 2",
-                     |power| !(0 == power % 2))
+                     |power| 0 != power % 2)
         ) {
             let mean = 0.0;
             let standard_deviation = 1.0;
@@ -327,7 +327,7 @@ mod tests {
                 power,
             };
 
-            assert_eq!(distribution.expectation(), 0.0);
+            approx::assert_relative_eq!(distribution.expectation(), 0.0);
         }
     }
 
@@ -347,7 +347,7 @@ mod tests {
                 power,
             };
 
-            assert_eq!(distribution.expectation(), expected, "failed at {power}");
+            approx::assert_relative_eq!(distribution.expectation(), expected);
         }
     }
 
@@ -379,18 +379,23 @@ mod tests {
 
         let powers = [2, 3, 4, 5, 6];
         let expected_results = [
-            mean.powi(2) + standard_deviation.powi(2),
-            mean.powi(3) + 3. * mean * standard_deviation.powi(2),
-            mean.powi(4)
-                + 6. * mean.powi(2) * standard_deviation.powi(2)
-                + 3. * standard_deviation.powi(4),
-            mean.powi(5)
-                + 10. * mean.powi(3) * standard_deviation.powi(2)
-                + 15. * mean * standard_deviation.powi(4),
-            mean.powi(6)
-                + 15. * mean.powi(4) * standard_deviation.powi(2)
-                + 45. * mean.powi(2) * standard_deviation.powi(4)
-                + 15. * standard_deviation.powi(6),
+            mean.mul_add(mean, standard_deviation.powi(2)),
+            (3. * mean).mul_add(standard_deviation.powi(2), mean.powi(3)),
+            3.0f64.mul_add(
+                standard_deviation.powi(4),
+                (6. * mean.powi(2)).mul_add(standard_deviation.powi(2), mean.powi(4)),
+            ),
+            (15. * mean).mul_add(
+                standard_deviation.powi(4),
+                (10. * mean.powi(3)).mul_add(standard_deviation.powi(2), mean.powi(5)),
+            ),
+            15.0f64.mul_add(
+                standard_deviation.powi(6),
+                (45. * mean.powi(2)).mul_add(
+                    standard_deviation.powi(4),
+                    (15. * mean.powi(4)).mul_add(standard_deviation.powi(2), mean.powi(6)),
+                ),
+            ),
         ];
 
         for (power, expected) in powers.into_iter().zip(expected_results.into_iter()) {

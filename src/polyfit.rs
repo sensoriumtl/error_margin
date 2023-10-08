@@ -83,6 +83,12 @@ pub struct FitResult<E: Scalar> {
     window: Range<E>,
 }
 
+impl<E: Scalar> FitResult<E> {
+    pub const fn solution(&self) -> &Array1<E> {
+        &self.solution
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum Scaling {
     Scaled,
@@ -186,14 +192,14 @@ mod tests {
         let mut rng = Isaac64Rng::seed_from_u64(seed);
         let num_samples = rng.gen_range(10..255);
         let coeffs = (0..=degree).map(|_| rng.gen()).collect::<Vec<f64>>();
-        let x = (0..num_samples).map(|n| n as f64).collect::<Vec<_>>();
+        let x = (0..num_samples).map(f64::from).collect::<Vec<_>>();
         let y = x
             .iter()
             .map(|x| {
                 coeffs
                     .iter()
                     .enumerate()
-                    .map(|(ii, ci)| ci * x.powi(ii as i32))
+                    .map(|(ii, ci)| ci * x.powi(i32::try_from(ii).unwrap()))
                     .sum()
             })
             .collect::<Vec<_>>();
@@ -212,14 +218,14 @@ mod tests {
         let mut rng = Isaac64Rng::seed_from_u64(seed);
         let num_samples = rng.gen_range(10..255);
         let coeffs = (0..=degree).map(|_| rng.gen()).collect::<Vec<f64>>();
-        let x = (0..num_samples).map(|n| n as f64).collect::<Vec<_>>();
+        let x = (0..num_samples).map(f64::from).collect::<Vec<_>>();
         let y = x
             .iter()
             .map(|x| {
                 coeffs
                     .iter()
                     .enumerate()
-                    .map(|(ii, ci)| ci * x.powi(ii as i32))
+                    .map(|(ii, ci)| ci * x.powi(i32::try_from(ii).unwrap()))
                     .sum()
             })
             .collect::<Vec<_>>();
