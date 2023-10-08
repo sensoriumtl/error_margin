@@ -154,7 +154,7 @@ mod test {
         // Check the diagonal elements
         for (ii, &calculated) in calculated.diag().into_iter().enumerate() {
             let expected: f64 = DistributionToPower {
-                distribution: distribution.clone(),
+                distribution,
                 power: ii + 1,
             }
             .variance();
@@ -177,7 +177,10 @@ mod test {
         let calculated = sigma_x(&distribution, degree);
 
         for (ii, jj) in (0..degree).tuple_combinations().filter(|(ii, jj)| ii != jj) {
-            approx::assert_relative_eq!(calculated[[ii, jj]], calculated[[jj, ii]]);
+            approx::assert_relative_eq!(
+                calculated.get((ii, jj)).unwrap(),
+                calculated.get((jj, ii)).unwrap()
+            );
         }
     }
 
@@ -197,15 +200,18 @@ mod test {
 
         for (ii, jj) in (0..degree).tuple_combinations().filter(|(ii, jj)| ii != jj) {
             let distribution_ii = DistributionToPower {
-                distribution: distribution.clone(),
+                distribution,
                 power: ii + 1,
             };
             let distribution_jj = DistributionToPower {
-                distribution: distribution.clone(),
+                distribution,
                 power: jj + 1,
             };
             let expected = distribution_ii.covariance(&distribution_jj);
-            approx::assert_relative_eq!(calculated[[ii, jj]], expected);
+            approx::assert_relative_eq!(
+                *calculated.get((ii, jj)).unwrap(),
+                expected
+            );
         }
     }
 
@@ -230,71 +236,61 @@ mod test {
         from_mathematica.insert((0, 1), 2. * mean * standard_deviation.powi(2));
         from_mathematica.insert(
             (0, 2),
-            3. * standard_deviation.powi(2) * (mean.powi(2) + standard_deviation.powi(2)),
+            3. * standard_deviation.powi(2) * standard_deviation.mul_add(standard_deviation, mean.powi(2)),
         );
         from_mathematica.insert(
             (0, 3),
             4. * mean
                 * standard_deviation.powi(2)
-                * (mean.powi(2) + 3. * standard_deviation.powi(2)),
+                * mean.mul_add(mean, 3. * standard_deviation.powi(2)),
         );
         from_mathematica.insert(
             (0, 4),
             5. * standard_deviation.powi(2)
-                * (mean.powi(4)
-                    + 6. * mean.powi(2) * standard_deviation.powi(2)
-                    + 3. * standard_deviation.powi(4)),
+                * 3.0f64.mul_add(standard_deviation.powi(4), (6. * mean.powi(2)).mul_add(standard_deviation.powi(2), mean.powi(4))),
         );
         from_mathematica.insert(
             (1, 2),
             6. * mean
                 * standard_deviation.powi(2)
-                * (mean.powi(2) + 2. * standard_deviation.powi(2)),
+                * mean.mul_add(mean, 2. * standard_deviation.powi(2)),
         );
         from_mathematica.insert(
             (1, 3),
             4. * standard_deviation.powi(2)
-                * (2. * mean.powi(4)
-                    + 9. * mean.powi(2) * standard_deviation.powi(2)
-                    + 3. * standard_deviation.powi(4)),
+                * 3.0f64.mul_add(standard_deviation.powi(4), 2.0f64.mul_add(mean.powi(4), 9. * mean.powi(2) * standard_deviation.powi(2))),
         );
         from_mathematica.insert(
             (1, 4),
             10. * mean
                 * standard_deviation.powi(2)
-                * (mean.powi(4)
-                    + 8. * mean.powi(2) * standard_deviation.powi(2)
-                    + 9. * standard_deviation.powi(4)),
+                * 9.0f64.mul_add(standard_deviation.powi(4), (8. * mean.powi(2)).mul_add(standard_deviation.powi(2), mean.powi(4))),
         );
         from_mathematica.insert(
             (2, 3),
             12. * mean
                 * standard_deviation.powi(2)
-                * (mean.powi(4)
-                    + 7. * mean.powi(2) * standard_deviation.powi(2)
-                    + 8. * standard_deviation.powi(4)),
+                * 8.0f64.mul_add(standard_deviation.powi(4), (7. * mean.powi(2)).mul_add(standard_deviation.powi(2), mean.powi(4))),
         );
         from_mathematica.insert(
             (2, 4),
             15. * standard_deviation.powi(2)
-                * (mean.powi(6)
-                    + 11. * mean.powi(4) * standard_deviation.powi(2)
-                    + 25. * mean.powi(2) * standard_deviation.powi(4)
-                    + 7. * standard_deviation.powi(6)),
+                * 7.0f64.mul_add(standard_deviation.powi(6), (25. * mean.powi(2)).mul_add(standard_deviation.powi(4), (11. * mean.powi(4)).mul_add(standard_deviation.powi(2), mean.powi(6)))),
         );
         from_mathematica.insert(
             (3, 4),
             20. * mean
                 * standard_deviation.powi(2)
-                * (mean.powi(6)
-                    + 15. * mean.powi(4) * standard_deviation.powi(2)
-                    + 57. * mean.powi(2) * standard_deviation.powi(4)
-                    + 45. * standard_deviation.powi(6)),
+                * 45.0f64.mul_add(standard_deviation.powi(6), (57. * mean.powi(2)).mul_add(standard_deviation.powi(4), (15. * mean.powi(4)).mul_add(standard_deviation.powi(2), mean.powi(6)))),
         );
 
         for (ii, jj) in (0..degree).tuple_combinations().filter(|(ii, jj)| ii != jj) {
             let expected = from_mathematica.get(&(ii, jj)).unwrap();
-            approx::assert_relative_eq!(calculated[[ii, jj]], expected, max_relative = 1e-10);
+            approx::assert_relative_eq!(
+                calculated.get((ii, jj)).unwrap(),
+                expected,
+                max_relative = 1e-10
+            );
         }
     }
 }
