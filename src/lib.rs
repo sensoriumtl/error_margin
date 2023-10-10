@@ -7,6 +7,7 @@ pub mod calibration;
 pub(crate) mod distributions;
 pub(crate) mod margin;
 pub(crate) mod math;
+pub(crate) mod minimisation;
 pub(crate) mod multi;
 pub(crate) mod polyfit;
 pub(crate) mod single;

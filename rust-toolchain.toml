@@ -1,2 +1,2 @@
 [toolchain]
-channel = "stable-x86_64-apple-darwin"
+channel = "stable"
