@@ -372,7 +372,7 @@ mod tests {
     use proptest::prelude::*;
     use rand_isaac::Isaac64Rng;
 
-    use crate::distributions;
+
 
     use super::{
         DistributionToPower, Measure, Mixture, NormalDistribution, UncorrelatedProduct,
@@ -575,11 +575,11 @@ mod tests {
 
         approx::assert_relative_eq!(
             product_distribution.variance(),
-            a_squared.expectation() * b_squared.expectation()
-                - a.expectation().powi(2) * b.expectation().powi(2)
+            a_squared.expectation().mul_add(b_squared.expectation(), -a.expectation().powi(2) * b.expectation().powi(2))
         );
     }
 
+    #[allow(clippy::similar_names)]
     #[test]
     fn mixture_of_products_with_no_correlations_has_correct_variance() {
         let seed = 40;
@@ -649,13 +649,11 @@ mod tests {
 
         approx::assert_relative_eq!(
             mixture.variance(),
-            product_a_sqr.expectation()
-                + product_b_sqr.expectation()
-                + 2. * product_a.expectation() * product_b.expectation()
-                - mixture.expectation().powi(2)
+            mixture.expectation().mul_add(-mixture.expectation(), (2. * product_a.expectation()).mul_add(product_b.expectation(), product_a_sqr.expectation() + product_b_sqr.expectation()))
         );
     }
 
+    #[allow(clippy::similar_names)]
     #[test]
     fn mixtures_of_products_with_aa_correlations_has_correct_variance() {
         let seed = 40;
@@ -740,13 +738,11 @@ mod tests {
 
         approx::assert_relative_eq!(
             mixture.variance(),
-            product_a_sqr.expectation()
-                + product_b_sqr.expectation()
-                + 2. * cross_term_a.expectation() * cross_term_b.expectation()
-                - mixture.expectation().powi(2)
+            mixture.expectation().mul_add(-mixture.expectation(), (2. * cross_term_a.expectation()).mul_add(cross_term_b.expectation(), product_a_sqr.expectation() + product_b_sqr.expectation()))
         );
     }
 
+    #[allow(clippy::similar_names)]
     #[test]
     fn mixtures_of_products_with_bb_correlations_has_correct_variance() {
         let seed = 40;
@@ -831,13 +827,11 @@ mod tests {
 
         approx::assert_relative_eq!(
             mixture.variance(),
-            product_a_sqr.expectation()
-                + product_b_sqr.expectation()
-                + 2. * cross_term_a.expectation() * cross_term_b.expectation()
-                - mixture.expectation().powi(2)
+            mixture.expectation().mul_add(-mixture.expectation(), (2. * cross_term_a.expectation()).mul_add(cross_term_b.expectation(), product_a_sqr.expectation() + product_b_sqr.expectation()))
         );
     }
 
+    #[allow(clippy::similar_names)]
     #[test]
     fn mixtures_of_products_with_ab_correlations_has_correct_variance() {
         let seed = 40;
@@ -922,13 +916,11 @@ mod tests {
 
         approx::assert_relative_eq!(
             mixture.variance(),
-            product_a_sqr.expectation()
-                + product_b_sqr.expectation()
-                + 2. * cross_term_a.expectation() * cross_term_b.expectation()
-                - mixture.expectation().powi(2)
+            mixture.expectation().mul_add(-mixture.expectation(), (2. * cross_term_a.expectation()).mul_add(cross_term_b.expectation(), product_a_sqr.expectation() + product_b_sqr.expectation()))
         );
     }
 
+    #[allow(clippy::similar_names)]
     #[test]
     fn mixtures_of_products_with_ba_correlations_has_correct_variance() {
         let seed = 40;
@@ -1013,13 +1005,11 @@ mod tests {
 
         approx::assert_relative_eq!(
             mixture.variance(),
-            product_a_sqr.expectation()
-                + product_b_sqr.expectation()
-                + 2. * cross_term_a.expectation() * cross_term_b.expectation()
-                - mixture.expectation().powi(2)
+            mixture.expectation().mul_add(-mixture.expectation(), (2. * cross_term_a.expectation()).mul_add(cross_term_b.expectation(), product_a_sqr.expectation() + product_b_sqr.expectation()))
         );
     }
 
+    #[allow(clippy::similar_names)]
     #[test]
     fn mixtures_of_products_with_aa_and_bb_correlations_has_correct_variance() {
         let seed = 40;
@@ -1100,13 +1090,11 @@ mod tests {
 
         approx::assert_relative_eq!(
             mixture.variance(),
-            product_a_sqr.expectation()
-                + product_b_sqr.expectation()
-                + 2. * cross_term.expectation()
-                - mixture.expectation().powi(2)
+            mixture.expectation().mul_add(-mixture.expectation(), 2.0f64.mul_add(cross_term.expectation(), product_a_sqr.expectation() + product_b_sqr.expectation()))
         );
     }
 
+    #[allow(clippy::similar_names)]
     #[test]
     fn mixtures_of_products_with_ab_and_ba_correlations_has_correct_variance() {
         let seed = 40;
@@ -1187,10 +1175,7 @@ mod tests {
 
         approx::assert_relative_eq!(
             mixture.variance(),
-            product_a_sqr.expectation()
-                + product_b_sqr.expectation()
-                + 2. * cross_term.expectation()
-                - mixture.expectation().powi(2)
+            mixture.expectation().mul_add(-mixture.expectation(), 2.0f64.mul_add(cross_term.expectation(), product_a_sqr.expectation() + product_b_sqr.expectation()))
         );
     }
 }

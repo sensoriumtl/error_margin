@@ -1,10 +1,9 @@
 use ndarray::ScalarOperand;
 use ndarray::{Array1, Array2};
-use ndarray_linalg::Inverse;
+
 use ndarray_linalg::Lapack;
 use ndarray_linalg::Scalar;
 
-use crate::Result;
 use crate::{
     distributions::{
         DistributionToPower, Measure, Mixture, NormalDistribution, UncorrelatedProduct,
@@ -38,7 +37,7 @@ impl<E: Copy> From<&Measurement<E>> for NormalDistribution<E> {
 }
 
 impl<E: Lapack + Scalar + ScalarOperand> Measurement<E> {
-    pub(crate) fn compute_unknown(&self, fit: &Polynomial<E>) -> Result<Self> {
+    pub(crate) fn compute_unknown(&self, fit: &Polynomial<E>) -> Self {
         let measurement: NormalDistribution<E> = NormalDistribution::from(self);
         let coefficient_distributions: Vec<NormalDistribution<E>> = fit
             .to_values()
@@ -52,7 +51,7 @@ impl<E: Lapack + Scalar + ScalarOperand> Measurement<E> {
                 .enumerate()
                 .map(|(ii, coeff_dist)| UncorrelatedProduct {
                     a: DistributionToPower {
-                        distribution: measurement.clone(),
+                        distribution: measurement,
                         power: ii,
                     },
                     b: DistributionToPower {
@@ -77,31 +76,10 @@ impl<E: Lapack + Scalar + ScalarOperand> Measurement<E> {
         let mean = mixture.expectation();
         let standard_deviation = mixture.variance().sqrt();
 
-        Ok(Self {
+        Self {
             value: mean,
             uncertainty: standard_deviation,
-        })
-
-        // Create the distributions
-        // let measurement: NormalDistribution<E> = NormalDistribution::from(self);
-        // let coefficient_distributions: Vec<NormalDistribution<E>> = fit
-        //     .to_values()
-        //     .iter()
-        //     .map(NormalDistribution::from)
-        //     .collect();
-        //
-        // let sigma_xy = sigma_xy(&measurement, &coefficient_distributions);
-        // let sigma_x = sigma_x(&measurement, fit.degree()) / E::from(1e-10).unwrap();
-        // let inv_sigma_x = sigma_x.inv()?;
-        //
-        // let variance = sigma_xy.dot(&inv_sigma_x.dot(&sigma_xy));
-        //
-        // let standard_deviation = Scalar::sqrt(variance);
-        //
-        // Ok(Self {
-        //     value: fit.evaluate_at(self.value),
-        //     uncertainty: standard_deviation,
-        // })
+        }
     }
 }
 
@@ -179,7 +157,7 @@ mod test {
     use crate::distributions::{DistributionToPower, Measure, NormalDistribution};
 
     use super::sigma_x;
-    use super::sigma_xy;
+
 
     #[test]
     fn polynomial_covariance_matrix_diagonal_is_generated_correctly() {

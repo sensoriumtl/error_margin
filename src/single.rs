@@ -2,13 +2,12 @@ use ndarray::ScalarOperand;
 use ndarray_linalg::{Lapack, Scalar};
 
 use crate::polyfit::Polynomial;
-use crate::Result;
 use crate::{calibration::Sensor, margin::Measurement};
 
 pub fn reconstruct<E: Lapack + PartialOrd + Scalar + ScalarOperand>(
     measurement: &Measurement<E>,
     sensor: &Sensor<E>,
-) -> Result<Measurement<E>> {
+) -> Measurement<E> {
     // When we have a single measurement we can just use the data from the fit, and the uncertainty
     // or the measurement. This gives
 
@@ -23,14 +22,12 @@ pub fn reconstruct<E: Lapack + PartialOrd + Scalar + ScalarOperand>(
 
     let polynomial = Polynomial::from(calibration_curve.clone());
 
-    let value = measurement.compute_unknown(&polynomial)?;
-
-    Ok(value)
+    measurement.compute_unknown(&polynomial)
 }
 
 #[cfg(test)]
 mod test {
-    use std::{fs, ops::Range};
+    use std::{ops::Range};
 
     use ndarray_rand::{
         rand::{Rng, SeedableRng},
@@ -94,7 +91,7 @@ mod test {
         let seed = 40;
         let mut rng = Isaac64Rng::seed_from_u64(seed);
 
-        let num_samples = rng.gen_range(10..255);
+        let _num_samples = rng.gen_range(10..255);
         let num_samples = 20;
         let start = rng.gen();
         let end = rng.gen_range(2.0..10.0) * start;
@@ -139,7 +136,7 @@ mod test {
                 value,
                 uncertainty: value * 1e-5,
             };
-            let reconstruction = reconstruct(&measurement, &sensor)?;
+            let reconstruction = reconstruct(&measurement, &sensor);
             approx::assert_relative_eq!(actual, reconstruction.value, max_relative = 1e-10);
         }
 
@@ -200,7 +197,7 @@ mod test {
                 value,
                 uncertainty: value * 1e-3,
             };
-            let reconstruction = reconstruct(&measurement, &sensor)?;
+            let reconstruction = reconstruct(&measurement, &sensor);
             assert!((actual - reconstruction.value) < reconstruction.uncertainty);
 
             writer

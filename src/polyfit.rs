@@ -111,7 +111,7 @@ pub fn polyfit<E: Copy + Float + Lapack + MulAssign + PartialOrd + Scalar + Scal
     y: &[E],
     degree: usize,
     maybe_weights: Option<&[E]>,
-    covariance: Scaling,
+    _covariance: Scaling,
 ) -> Result<FitResult<E>> {
     if x.iter().any(|&ele| !ele.is_finite()) {
         return Err("x-elements contain infinite or NaN values".into());
@@ -145,7 +145,7 @@ pub fn polyfit<E: Copy + Float + Lapack + MulAssign + PartialOrd + Scalar + Scal
 
     let variance_y = maybe_weights
         .unwrap()
-        .into_iter()
+        .iter()
         .map(|w| E::one() / *w)
         .collect::<Array1<_>>();
     let variance_matrix = Array2::from_diag(&variance_y);
@@ -168,7 +168,7 @@ pub fn polyfit<E: Copy + Float + Lapack + MulAssign + PartialOrd + Scalar + Scal
     // let mut covariance_matrix = covariance_matrix / &outer_prod_of_scaling;
     // let covariance_matrix_core = lhs.t().dot(&variance_matrix.dot(&lhs)) * outer_prod_of_scaling;
     // covariance_matrix = covariance_matrix.dot(&covariance_matrix_core.dot(&covariance_matrix));
-    let covariance = Scaling::Unscaled;
+    // let _covariance = Scaling::Unscaled;
     // if covariance == Scaling::Scaled {
     //     let factor = result
     //         .residual_sum_of_squares

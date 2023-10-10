@@ -1,9 +1,5 @@
 use std::collections::HashMap;
-use std::f64::EPSILON;
 
-use argmin::core::observers::{ObserverMode, SlogLogger};
-use argmin::solver::gaussnewton::GaussNewtonLS;
-use argmin::solver::linesearch::MoreThuenteLineSearch;
 use ndarray::{Array1, ScalarOperand};
 use ndarray_linalg::{Lapack, Scalar};
 
@@ -30,20 +26,20 @@ pub fn correct<
         + std::convert::Into<f64>
         + std::convert::From<f64>,
 >(
-    raw_measurements: HashMap<Gas, Measurement<E>>,
-    sensors: HashMap<Gas, Sensor<E>>,
+    raw_measurements: &HashMap<Gas, Measurement<E>>,
+    sensors: &HashMap<Gas, Sensor<E>>,
     initial_parameters: Option<Array1<E>>,
 ) -> Result<HashMap<Gas, Measurement<E>>> {
     let measurement_targets = raw_measurements.keys().cloned().collect::<Vec<_>>();
-    let problem = Problem::build(&measurement_targets, &raw_measurements, &sensors).to_f64();
+    let problem = Problem::build(&measurement_targets, raw_measurements, sensors).into_f64();
 
     // TODO: casting to f64 because `solve` does not work with generics
     let initial_parameters: Array1<f64> = initial_parameters.map_or_else(
         || Array1::zeros(measurement_targets.len()),
-        |initial_parameters| initial_parameters.mapv(|x| x.into()),
+        |initial_parameters| initial_parameters.mapv(std::convert::Into::into),
     );
 
-    let solution: Array1<E> = problem.solve(initial_parameters)?.mapv(|x| x.into());
+    let solution: Array1<E> = problem.solve(initial_parameters)?.mapv(std::convert::Into::into);
     let solution = into_map(solution, &measurement_targets)
         .into_iter()
         .map(|(target, value)| {
@@ -143,7 +139,7 @@ pub fn reconstruct<E: Lapack + PartialOrd + Scalar + ScalarOperand>(
     true_measurement: &Measurement<E>, // Measurement after error correction with corresponding
     // uncertainty
     sensor: &Sensor<E>,
-) -> Result<Measurement<E>> {
+) -> Measurement<E> {
     let calibration_curve = sensor.calibration();
     assert!(
         calibration_curve.window_contains(&true_measurement.value),
@@ -154,9 +150,7 @@ pub fn reconstruct<E: Lapack + PartialOrd + Scalar + ScalarOperand>(
 
     let polynomial = Polynomial::from(calibration_curve.clone());
 
-    let value = true_measurement.compute_unknown(&polynomial)?;
-
-    Ok(value)
+    true_measurement.compute_unknown(&polynomial)
 }
 
 #[cfg(test)]
@@ -259,7 +253,7 @@ mod tests {
             .map(|(target, idx)| (*target, polynomial.x[*idx]))
             .collect::<HashMap<_, _>>();
 
-        for target in targets.iter() {
+        for target in &targets {
             let mut measurement = 0.0;
             let polynomial: GeneratedPolynomial<DEGREE> =
                 generate_polynomial(&mut rng, num_samples, window.clone());
@@ -336,7 +330,7 @@ mod tests {
         // Act
 
         let initial_guess = None;
-        let corrected = correct(measurements, sensors, initial_guess)?;
+        let corrected = correct(&measurements, &sensors, initial_guess)?;
 
         // Assert
         for (target, calculated) in corrected {

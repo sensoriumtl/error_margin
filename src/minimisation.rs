@@ -12,7 +12,7 @@ use crate::margin::Measurement;
 use crate::Result;
 
 #[derive(Clone)]
-pub(crate) struct Problem<E> {
+pub struct Problem<E> {
     /// The matrix is the coefficient matrix
     ///
     /// The coefficients matrix is a rectangular matrix of dimension (num_sensors x (degree - 1) *
@@ -67,7 +67,7 @@ impl<E: Scalar> Problem<E> {
         // Check all the sensors in the list have an associated measurement
         // TODO: Handle assertion failures gracefully with error handling.
         assert_eq!(measurement_targets.len(), sensors.len());
-        for target in measurement_targets.iter() {
+        for target in measurement_targets {
             assert!(sensors.get(target).is_some());
         }
 
@@ -131,7 +131,7 @@ impl<E: Scalar> Problem<E> {
         dbg!(&lhs);
         Self {
             matrix,
-            lhs: lhs,
+            lhs,
             degree,
         }
     }
@@ -172,10 +172,10 @@ impl<E: Scalar + std::convert::Into<f64>> Problem<E> {
     /// cast the generic problem to a concrete type to run any optimisations.
     ///
     /// TODO: Work out the trait bounds and delete this method
-    pub(crate) fn to_f64(self) -> Problem<f64> {
+    pub(crate) fn into_f64(self) -> Problem<f64> {
         Problem {
-            matrix: self.matrix.mapv(|x| x.into()),
-            lhs: self.lhs.mapv(|x| x.into()),
+            matrix: self.matrix.mapv(std::convert::Into::into),
+            lhs: self.lhs.mapv(std::convert::Into::into),
             degree: self.degree,
         }
     }
