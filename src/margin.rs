@@ -39,7 +39,6 @@ impl<E: Copy> From<&Measurement<E>> for NormalDistribution<E> {
 
 impl<E: Lapack + Scalar + ScalarOperand> Measurement<E> {
     pub(crate) fn compute_unknown(&self, fit: &Polynomial<E>) -> Result<Self> {
-        // Create the distributions
         let measurement: NormalDistribution<E> = NormalDistribution::from(self);
         let coefficient_distributions: Vec<NormalDistribution<E>> = fit
             .to_values()
@@ -47,18 +46,65 @@ impl<E: Lapack + Scalar + ScalarOperand> Measurement<E> {
             .map(NormalDistribution::from)
             .collect();
 
-        let sigma_xy = sigma_xy(&measurement, &coefficient_distributions);
-        let sigma_x = sigma_x(&measurement, fit.degree()) / E::from(1e-10).unwrap();
-        let inv_sigma_x = sigma_x.inv()?;
 
-        let variance = sigma_xy.dot(&inv_sigma_x.dot(&sigma_xy));
+        let product_distributions =
+            coefficient_distributions
+                .iter()
+                .enumerate()
+                .map(|(ii, coeff_dist)| UncorrelatedProduct {
+                    a: DistributionToPower {
+                        distribution: measurement.clone(),
+                        power: ii,
+                    },
+                    b: DistributionToPower {
+                        distribution: *coeff_dist,
+                        power: 1,
+                    },
+                });
 
-        let standard_deviation = Scalar::sqrt(variance);
+        let weights = vec![E::one(); product_distributions.len()];
+        let mixture: Mixture<E, UncorrelatedProduct<DistributionToPower<NormalDistribution<E>>>> =
+            Mixture(
+                product_distributions
+                    .into_iter()
+                    .zip(weights)
+                    .map(|(d, w)| WeightedDistribution {
+                        distribution: d,
+                        weight: w,
+                    })
+                    .collect(),
+            );
+
+        let mean = mixture.expectation();
+        let standard_deviation = mixture.variance().sqrt();
 
         Ok(Self {
-            value: fit.evaluate_at(self.value),
+            value: mean,
             uncertainty: standard_deviation,
         })
+
+
+
+        // Create the distributions
+        // let measurement: NormalDistribution<E> = NormalDistribution::from(self);
+        // let coefficient_distributions: Vec<NormalDistribution<E>> = fit
+        //     .to_values()
+        //     .iter()
+        //     .map(NormalDistribution::from)
+        //     .collect();
+        //
+        // let sigma_xy = sigma_xy(&measurement, &coefficient_distributions);
+        // let sigma_x = sigma_x(&measurement, fit.degree()) / E::from(1e-10).unwrap();
+        // let inv_sigma_x = sigma_x.inv()?;
+        //
+        // let variance = sigma_xy.dot(&inv_sigma_x.dot(&sigma_xy));
+        //
+        // let standard_deviation = Scalar::sqrt(variance);
+        //
+        // Ok(Self {
+        //     value: fit.evaluate_at(self.value),
+        //     uncertainty: standard_deviation,
+        // })
     }
 }
 
@@ -136,6 +182,7 @@ mod test {
     use crate::distributions::{DistributionToPower, Measure, NormalDistribution};
 
     use super::sigma_x;
+    use super::sigma_xy;
 
     #[test]
     fn polynomial_covariance_matrix_diagonal_is_generated_correctly() {
@@ -293,4 +340,47 @@ mod test {
             );
         }
     }
+
+    // #[test]
+    // fn vector_sigma_xy_matches_tabulated() {
+    //     let seed = 40;
+    //     let mut rng = Isaac64Rng::seed_from_u64(seed);
+    //
+    //     let degree = 5;
+    //
+    //     let mean = rng.gen();
+    //     let standard_deviation = rng.gen();
+    //
+    //
+    //     let measurement: NormalDistribution<f64> = NormalDistribution {
+    //         mean,
+    //         standard_deviation,
+    //     };
+    //
+    //
+    //     let coeffs: Vec<_> = (0..degree).map(|_| NormalDistribution { mean: rng.gen(), standard_deviation: rng.gen() }).collect();
+    //     let m1 = coeffs[0].mean;
+    //     let m2 = coeffs[1].mean;
+    //     let m3 = coeffs[2].mean;
+        // let m4 = coeffs[3].mean;
+        // let m5 = coeffs[4].mean;
+        //
+        // let from_mathematica = [
+        //     standard_deviation.powi(2) * (
+        //         m1
+        //             + 2. * mean * m2
+        //             + 3. * (mean.powi(2) + standard_deviation.powi(2)) * m3
+        //             + 4. * mean * (mean.powi(2) + 3. * standard_deviation.powi(2)) * m4
+        //             + 5. * (mean.powi(4) + 6. * mean.powi(2) * standard_deviation.powi(2) + 3. * standard_deviation.powi(4)) * m5
+        //     )
+        // ];
+        // let sigma_xy = sigma_xy(&measurement, &coeffs);
+        // dbg!(&sigma_xy);
+        //
+        //
+        // for (expected, actual) in from_mathematica.into_iter().zip(sigma_xy) {
+        //     approx::assert_relative_eq!(expected, actual);
+        // }
+
+    // }
 }

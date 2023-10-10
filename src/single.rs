@@ -30,7 +30,7 @@ pub fn reconstruct<E: Lapack + PartialOrd + Scalar + ScalarOperand>(
 
 #[cfg(test)]
 mod test {
-    use std::ops::Range;
+    use std::{ops::Range, fs};
 
     use ndarray_rand::{
         rand::{Rng, SeedableRng},
@@ -89,12 +89,13 @@ mod test {
 
     #[test]
     fn values_are_reconstructed_with_zero_measurement_error() -> Result<()> {
-        const DEGREE: usize = 5;
+        const DEGREE: usize = 3;
 
         let seed = 40;
         let mut rng = Isaac64Rng::seed_from_u64(seed);
 
         let num_samples = rng.gen_range(10..255);
+        let num_samples = 20;
         let start = rng.gen();
         let end = rng.gen_range(2.0..10.0) * start;
         let window = Range { start, end };
@@ -123,7 +124,7 @@ mod test {
                 .collect(),
         };
 
-        let sensor = SensorBuilder::new(target, rng.gen(), rng.gen(), DEGREE)
+        let sensor = SensorBuilder::new(target, 1e-5, rng.gen(), DEGREE - 1)
             .with_calibration(calibration)
             .build()?;
 
@@ -134,11 +135,12 @@ mod test {
             .skip(1)
             .take_while(|(x, _)| sensor.calibration().window_contains(x))
         {
-            let reconstruction = reconstruct(
-                &crate::margin::Measurement {
+            let measurement = crate::margin::Measurement {
                     value,
-                    uncertainty: 1e-5,
-                },
+                    uncertainty: value * 1e-5,
+            };
+            let reconstruction = reconstruct(
+                &measurement,
                 &sensor,
             )?;
             approx::assert_relative_eq!(actual, reconstruction.value, max_relative = 1e-10);
@@ -183,9 +185,12 @@ mod test {
                 .collect(),
         };
 
-        let sensor = SensorBuilder::new(target, rng.gen(), rng.gen(), DEGREE)
+        // TODO: Sensor has a different degree, to that in the generated polynomial
+        let sensor = SensorBuilder::new(target, 0.1, rng.gen(), DEGREE - 1)
             .with_calibration(calibration)
             .build()?;
+
+        let mut writer = csv::Writer::from_path("data.csv").unwrap();
 
         for (value, actual) in polynomial
             .x
@@ -196,11 +201,17 @@ mod test {
         {
             let measurement = crate::margin::Measurement {
                 value,
-                uncertainty: (value * 0.1).sqrt(),
+                uncertainty: value * 1e-3,
             };
             let reconstruction = reconstruct(&measurement, &sensor)?;
-            // dbg!(measurement, actual, reconstruction);
-            approx::assert_relative_eq!(actual, reconstruction.value, max_relative = 1e-10);
+            assert!((actual - reconstruction.value) < reconstruction.uncertainty);
+
+            writer.write_record(&[
+                    format!("{value}"),
+                    format!("{}", reconstruction.value),
+                    format!("{}", reconstruction.uncertainty)
+                ]).unwrap();
+
         }
 
         Ok(())

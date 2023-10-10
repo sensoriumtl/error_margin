@@ -8,10 +8,14 @@ description = "estimate margin of error in real-time sensing"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ndarray = { version = "0.15", features = ["blas"] }
+blas-src = { version = "0.8", features = ["openblas"] }
+openblas-src = { version = "0.10", features = ["cblas", "system"] }
+
+argmin = { version = "0.8.1", features = ["_ndarrayl"] }
 csv = "1"
 itertools = "0.11"
-ndarray = "0.15"
-ndarray-linalg = { version = "0.16", features = ["openblas-system"] }
+ndarray-linalg = { version = "0.16" }
 num-traits = "0.2"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

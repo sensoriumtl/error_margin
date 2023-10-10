@@ -11,4 +11,5 @@ pub(crate) mod multi;
 pub(crate) mod polyfit;
 pub(crate) mod single;
 
+
 pub type Result<T> = ::std::result::Result<T, Box<dyn ::std::error::Error>>;

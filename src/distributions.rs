@@ -261,17 +261,57 @@ impl<T: Scalar> Measure<T>
             .iter()
             .map(
                 |WeightedDistribution {
-                     distribution: UncorrelatedProduct { a, b },
+                     distribution,
                      weight,
                  }| {
-                    *weight * a.distribution.moment(a.power) * b.distribution.moment(b.power)
+                    *weight * distribution.expectation()
                 },
             )
             .sum()
     }
 
     fn variance(&self) -> T {
-        unimplemented!()
+        let expectation_value_of_square: T = self
+            .0
+            .iter()
+            .cartesian_product(self.0.iter())
+            .map(|(first, second)| {
+                let product_weight = first.weight * second.weight;
+                let hits = (
+                    first.distribution.a.distribution == second.distribution.a.distribution,
+                    first.distribution.a.distribution == second.distribution.b.distribution,
+                    first.distribution.b.distribution == second.distribution.a.distribution,
+                    first.distribution.b.distribution == second.distribution.b.distribution
+                );
+                let uncorrelated_distributions = match hits {
+                    (false, false, false, false) => vec![first.distribution.a, first.distribution.b, second.distribution.a, second.distribution.b],
+                    (true, false, false, false) => vec![
+                        DistributionToPower { distribution: first.distribution.a.distribution, power: first.distribution.a.power + second.distribution.a.power },
+                        first.distribution.b, second.distribution.b],
+                    (false, true, false, false) => vec![
+                        DistributionToPower { distribution: first.distribution.a.distribution, power: first.distribution.a.power + second.distribution.b.power },
+                        first.distribution.b, second.distribution.a],
+                    (false, false, true, false) => vec![
+                        DistributionToPower { distribution: first.distribution.b.distribution, power: first.distribution.b.power + second.distribution.a.power },
+                        first.distribution.a, second.distribution.b],
+                    (false, false, false, true) => vec![
+                        DistributionToPower { distribution: first.distribution.b.distribution, power: first.distribution.b.power + second.distribution.b.power },
+                        first.distribution.a, second.distribution.a],
+                    (true, false, false, true) => vec![
+                        DistributionToPower { distribution: first.distribution.a.distribution, power: first.distribution.a.power + second.distribution.a.power },
+                        DistributionToPower { distribution: first.distribution.b.distribution, power: first.distribution.b.power + second.distribution.b.power }],
+                    (false, true, true, false) => vec![
+                        DistributionToPower { distribution: first.distribution.a.distribution, power: first.distribution.a.power + second.distribution.b.power },
+                        DistributionToPower { distribution: first.distribution.b.distribution, power: first.distribution.b.power + second.distribution.a.power }],
+                    _ => unreachable!(),
+                };
+                product_weight * uncorrelated_distributions.into_iter()
+                    .map(|distribution| distribution.expectation())
+                    .product()
+            })
+            .sum();
+
+        expectation_value_of_square - self.expectation().powi(2)
     }
 
     fn covariance(&self, other: &DistributionToPower<NormalDistribution<T>>) -> T {
@@ -293,7 +333,9 @@ mod tests {
     use proptest::prelude::*;
     use rand_isaac::Isaac64Rng;
 
-    use super::{DistributionToPower, Measure, NormalDistribution};
+    use crate::distributions;
+
+    use super::{DistributionToPower, Measure, NormalDistribution, UncorrelatedProduct, Mixture, WeightedDistribution};
 
     #[test]
     fn unit_normal_distribution_has_correct_expectation_value() {
@@ -408,5 +450,406 @@ mod tests {
             };
             approx::assert_relative_eq!(distribution.expectation(), expected);
         }
+    }
+
+    #[test]
+    fn product_of_uncorrelated_distributions_has_correct_expectation_value() {
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+        let mean_a: f64 = rng.gen();
+        let standard_deviation_a: f64 = rng.gen();
+        let mean_b: f64 = rng.gen();
+        let standard_deviation_b: f64 = rng.gen();
+
+        let power_a = rng.gen_range(1..10);
+        let power_b = rng.gen_range(1..10);
+
+        let a = DistributionToPower {
+            distribution: NormalDistribution { mean: mean_a, standard_deviation: standard_deviation_a},
+            power: power_a,
+        };
+        let b = DistributionToPower {
+            distribution: NormalDistribution { mean: mean_b, standard_deviation: standard_deviation_b},
+            power: power_b,
+        };
+
+        let product_distribution = UncorrelatedProduct { a, b };
+
+        approx::assert_relative_eq!(product_distribution.expectation(), a.expectation() * b.expectation());
+    }
+
+    #[test]
+    fn product_of_uncorrelated_distributions_has_correct_variance() {
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+        let mean_a: f64 = rng.gen();
+        let standard_deviation_a: f64 = rng.gen();
+        let mean_b: f64 = rng.gen();
+        let standard_deviation_b: f64 = rng.gen();
+
+        let power_a = rng.gen_range(1..10);
+        let power_b = rng.gen_range(1..10);
+
+        let a = DistributionToPower {
+            distribution: NormalDistribution { mean: mean_a, standard_deviation: standard_deviation_a},
+            power: power_a,
+        };
+        let b = DistributionToPower {
+            distribution: NormalDistribution { mean: mean_b, standard_deviation: standard_deviation_b},
+            power: power_b,
+        };
+
+        let product_distribution = UncorrelatedProduct { a, b };
+
+        let a_squared = DistributionToPower {
+            distribution: NormalDistribution { mean: mean_a, standard_deviation: standard_deviation_a},
+            power: power_a * 2,
+        };
+        let b_squared = DistributionToPower {
+            distribution: NormalDistribution { mean: mean_b, standard_deviation: standard_deviation_b},
+            power: power_b * 2,
+        };
+
+        approx::assert_relative_eq!(
+            product_distribution.variance(),
+            a_squared.expectation() * b_squared.expectation() - a.expectation().powi(2) * b.expectation().powi(2)
+        );
+    }
+
+    #[test]
+    fn mixture_of_products_with_no_correlations_has_correct_variance() {
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+        let means: Vec<f64> = (0..4).map(|_| rng.gen()).collect();
+        let standard_deviations: Vec<f64> = (0..4).map(|_| rng.gen()).collect();
+        let powers: Vec<usize> = (0..4).map(|_| rng.gen_range(1..4)).collect();
+
+        let distributions = means.iter().zip(standard_deviations).zip(powers)
+            .map(|((mean, standard_deviation), power)| DistributionToPower {
+                distribution: NormalDistribution { mean: *mean, standard_deviation },
+                power
+            })
+            .collect::<Vec<_>>();
+
+        let product_a = UncorrelatedProduct { a: distributions[0], b: distributions[1] };
+        let product_b = UncorrelatedProduct { a: distributions[2], b: distributions[3] };
+
+        let mixture = Mixture(vec![
+            WeightedDistribution { distribution: product_a, weight: 1.0 },
+            WeightedDistribution { distribution: product_b, weight: 1.0 },
+        ]);
+
+        let product_a_sqr = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+            b: DistributionToPower { distribution: distributions[1].distribution, power: 2 * distributions[1].power },
+        };
+        let product_b_sqr = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[2].distribution, power: 2 * distributions[2].power },
+            b: DistributionToPower { distribution: distributions[3].distribution, power: 2 * distributions[3].power },
+        };
+
+        approx::assert_relative_eq!(mixture.expectation(), product_a.expectation() + product_b.expectation());
+
+        approx::assert_relative_eq!(
+            mixture.variance(),
+            product_a_sqr.expectation() + product_b_sqr.expectation()
+                + 2. * product_a.expectation() * product_b.expectation()
+                - mixture.expectation().powi(2)
+        );
+    }
+
+    #[test]
+    fn mixtures_of_products_with_aa_correlations_has_correct_variance() {
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+        let means: Vec<f64> = (0..3).map(|_| rng.gen()).collect();
+        let standard_deviations: Vec<f64> = (0..3).map(|_| rng.gen()).collect();
+        let powers: Vec<usize> = (0..3).map(|_| rng.gen_range(1..4)).collect();
+
+        let distributions = means.iter().zip(standard_deviations).zip(powers)
+            .map(|((mean, standard_deviation), power)| DistributionToPower {
+                distribution: NormalDistribution { mean: *mean, standard_deviation },
+                power
+            })
+            .collect::<Vec<_>>();
+
+        let product_a = UncorrelatedProduct { a: distributions[0], b: distributions[1] };
+        let product_b = UncorrelatedProduct { a: distributions[0], b: distributions[2] };
+
+        let mixture = Mixture(vec![
+            WeightedDistribution { distribution: product_a, weight: 1.0 },
+            WeightedDistribution { distribution: product_b, weight: 1.0 },
+        ]);
+
+        let product_a_sqr = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+            b: DistributionToPower { distribution: distributions[1].distribution, power: 2 * distributions[1].power },
+        };
+        let product_b_sqr = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+            b: DistributionToPower { distribution: distributions[2].distribution, power: 2 * distributions[2].power },
+        };
+
+        let cross_term_a = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+            b: DistributionToPower { distribution: distributions[2].distribution, power: distributions[2].power },
+        };
+        let cross_term_b = DistributionToPower {
+            distribution: distributions[1].distribution, power: distributions[1].power
+        };
+
+        approx::assert_relative_eq!(mixture.expectation(), product_a.expectation() + product_b.expectation());
+
+        approx::assert_relative_eq!(
+            mixture.variance(),
+            product_a_sqr.expectation() + product_b_sqr.expectation()
+                + 2. * cross_term_a.expectation() * cross_term_b.expectation()
+                - mixture.expectation().powi(2)
+        );
+    }
+
+    #[test]
+    fn mixtures_of_products_with_bb_correlations_has_correct_variance() {
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+        let means: Vec<f64> = (0..3).map(|_| rng.gen()).collect();
+        let standard_deviations: Vec<f64> = (0..3).map(|_| rng.gen()).collect();
+        let powers: Vec<usize> = (0..3).map(|_| rng.gen_range(1..4)).collect();
+
+        let distributions = means.iter().zip(standard_deviations).zip(powers)
+            .map(|((mean, standard_deviation), power)| DistributionToPower {
+                distribution: NormalDistribution { mean: *mean, standard_deviation },
+                power
+            })
+            .collect::<Vec<_>>();
+
+        let product_a = UncorrelatedProduct { a: distributions[1], b: distributions[0] };
+        let product_b = UncorrelatedProduct { a: distributions[2], b: distributions[0] };
+
+        let mixture = Mixture(vec![
+            WeightedDistribution { distribution: product_a, weight: 1.0 },
+            WeightedDistribution { distribution: product_b, weight: 1.0 },
+        ]);
+
+        let product_a_sqr = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[1].distribution, power: 2 * distributions[1].power },
+            b: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+        };
+        let product_b_sqr = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[2].distribution, power: 2 * distributions[2].power },
+            b: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+        };
+
+        let cross_term_a = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+            b: DistributionToPower { distribution: distributions[2].distribution, power: distributions[2].power },
+        };
+        let cross_term_b = DistributionToPower {
+            distribution: distributions[1].distribution, power: distributions[1].power
+        };
+
+        approx::assert_relative_eq!(mixture.expectation(), product_a.expectation() + product_b.expectation());
+
+        approx::assert_relative_eq!(
+            mixture.variance(),
+            product_a_sqr.expectation() + product_b_sqr.expectation()
+                + 2. * cross_term_a.expectation() * cross_term_b.expectation()
+                - mixture.expectation().powi(2)
+        );
+    }
+
+    #[test]
+    fn mixtures_of_products_with_ab_correlations_has_correct_variance() {
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+        let means: Vec<f64> = (0..3).map(|_| rng.gen()).collect();
+        let standard_deviations: Vec<f64> = (0..3).map(|_| rng.gen()).collect();
+        let powers: Vec<usize> = (0..3).map(|_| rng.gen_range(1..4)).collect();
+
+        let distributions = means.iter().zip(standard_deviations).zip(powers)
+            .map(|((mean, standard_deviation), power)| DistributionToPower {
+                distribution: NormalDistribution { mean: *mean, standard_deviation },
+                power
+            })
+            .collect::<Vec<_>>();
+
+        let product_a = UncorrelatedProduct { a: distributions[0], b: distributions[1] };
+        let product_b = UncorrelatedProduct { a: distributions[2], b: distributions[0] };
+
+        let mixture = Mixture(vec![
+            WeightedDistribution { distribution: product_a, weight: 1.0 },
+            WeightedDistribution { distribution: product_b, weight: 1.0 },
+        ]);
+
+        let product_a_sqr = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+            b: DistributionToPower { distribution: distributions[1].distribution, power: 2 * distributions[1].power },
+        };
+        let product_b_sqr = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[2].distribution, power: 2 * distributions[2].power },
+            b: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+        };
+
+        let cross_term_a = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+            b: DistributionToPower { distribution: distributions[2].distribution, power: distributions[2].power },
+        };
+        let cross_term_b = DistributionToPower {
+            distribution: distributions[1].distribution, power: distributions[1].power
+        };
+
+        approx::assert_relative_eq!(mixture.expectation(), product_a.expectation() + product_b.expectation());
+
+        approx::assert_relative_eq!(
+            mixture.variance(),
+            product_a_sqr.expectation() + product_b_sqr.expectation()
+                + 2. * cross_term_a.expectation() * cross_term_b.expectation()
+                - mixture.expectation().powi(2)
+        );
+    }
+
+    #[test]
+    fn mixtures_of_products_with_ba_correlations_has_correct_variance() {
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+        let means: Vec<f64> = (0..3).map(|_| rng.gen()).collect();
+        let standard_deviations: Vec<f64> = (0..3).map(|_| rng.gen()).collect();
+        let powers: Vec<usize> = (0..3).map(|_| rng.gen_range(1..4)).collect();
+
+        let distributions = means.iter().zip(standard_deviations).zip(powers)
+            .map(|((mean, standard_deviation), power)| DistributionToPower {
+                distribution: NormalDistribution { mean: *mean, standard_deviation },
+                power
+            })
+            .collect::<Vec<_>>();
+
+        let product_a = UncorrelatedProduct { a: distributions[1], b: distributions[0] };
+        let product_b = UncorrelatedProduct { a: distributions[0], b: distributions[2] };
+
+        let mixture = Mixture(vec![
+            WeightedDistribution { distribution: product_a, weight: 1.0 },
+            WeightedDistribution { distribution: product_b, weight: 1.0 },
+        ]);
+
+        let product_a_sqr = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[1].distribution, power: 2 * distributions[1].power },
+            b: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+        };
+        let product_b_sqr = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[2].distribution, power: 2 * distributions[2].power },
+            b: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+        };
+
+        let cross_term_a = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+            b: DistributionToPower { distribution: distributions[2].distribution, power: distributions[2].power },
+        };
+        let cross_term_b = DistributionToPower {
+            distribution: distributions[1].distribution, power: distributions[1].power
+        };
+
+        approx::assert_relative_eq!(mixture.expectation(), product_a.expectation() + product_b.expectation());
+
+        approx::assert_relative_eq!(
+            mixture.variance(),
+            product_a_sqr.expectation() + product_b_sqr.expectation()
+                + 2. * cross_term_a.expectation() * cross_term_b.expectation()
+                - mixture.expectation().powi(2)
+        );
+    }
+
+
+    #[test]
+    fn mixtures_of_products_with_aa_and_bb_correlations_has_correct_variance() {
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+        let means: Vec<f64> = (0..2).map(|_| rng.gen()).collect();
+        let standard_deviations: Vec<f64> = (0..2).map(|_| rng.gen()).collect();
+        let powers: Vec<usize> = (0..2).map(|_| rng.gen_range(1..4)).collect();
+
+        let distributions = means.iter().zip(standard_deviations).zip(powers)
+            .map(|((mean, standard_deviation), power)| DistributionToPower {
+                distribution: NormalDistribution { mean: *mean, standard_deviation },
+                power
+            })
+            .collect::<Vec<_>>();
+
+        let product_a = UncorrelatedProduct { a: distributions[0], b: distributions[1] };
+        let product_b = UncorrelatedProduct { a: distributions[0], b: distributions[1] };
+
+        let mixture = Mixture(vec![
+            WeightedDistribution { distribution: product_a, weight: 1.0 },
+            WeightedDistribution { distribution: product_b, weight: 1.0 },
+        ]);
+
+        let product_a_sqr = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+            b: DistributionToPower { distribution: distributions[1].distribution, power: 2 * distributions[1].power },
+        };
+        let product_b_sqr = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+            b: DistributionToPower { distribution: distributions[1].distribution, power: 2 * distributions[1].power },
+        };
+
+        let cross_term = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+            b: DistributionToPower { distribution: distributions[1].distribution, power: 2 * distributions[1].power },
+        };
+
+        approx::assert_relative_eq!(mixture.expectation(), product_a.expectation() + product_b.expectation());
+
+        approx::assert_relative_eq!(
+            mixture.variance(),
+            product_a_sqr.expectation() + product_b_sqr.expectation()
+                + 2. * cross_term.expectation()
+                - mixture.expectation().powi(2)
+        );
+    }
+
+    #[test]
+    fn mixtures_of_products_with_ab_and_ba_correlations_has_correct_variance() {
+        let seed = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(seed);
+        let means: Vec<f64> = (0..2).map(|_| rng.gen()).collect();
+        let standard_deviations: Vec<f64> = (0..2).map(|_| rng.gen()).collect();
+        let powers: Vec<usize> = (0..2).map(|_| rng.gen_range(1..4)).collect();
+
+        let distributions = means.iter().zip(standard_deviations).zip(powers)
+            .map(|((mean, standard_deviation), power)| DistributionToPower {
+                distribution: NormalDistribution { mean: *mean, standard_deviation },
+                power
+            })
+            .collect::<Vec<_>>();
+
+        let product_a = UncorrelatedProduct { a: distributions[0], b: distributions[1] };
+        let product_b = UncorrelatedProduct { a: distributions[1], b: distributions[0] };
+
+        let mixture = Mixture(vec![
+            WeightedDistribution { distribution: product_a, weight: 1.0 },
+            WeightedDistribution { distribution: product_b, weight: 1.0 },
+        ]);
+
+        let product_a_sqr = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+            b: DistributionToPower { distribution: distributions[1].distribution, power: 2 * distributions[1].power },
+        };
+        let product_b_sqr = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[1].distribution, power: 2 * distributions[1].power },
+            b: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+        };
+
+        let cross_term = UncorrelatedProduct {
+            a: DistributionToPower { distribution: distributions[0].distribution, power: 2 * distributions[0].power },
+            b: DistributionToPower { distribution: distributions[1].distribution, power: 2 * distributions[1].power },
+        };
+
+        approx::assert_relative_eq!(mixture.expectation(), product_a.expectation() + product_b.expectation());
+
+        approx::assert_relative_eq!(
+            mixture.variance(),
+            product_a_sqr.expectation() + product_b_sqr.expectation()
+                + 2. * cross_term.expectation()
+                - mixture.expectation().powi(2)
+        );
     }
 }

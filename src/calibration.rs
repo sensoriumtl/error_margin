@@ -156,7 +156,7 @@ impl<E: Scalar, N> SensorBuilder<E, N> {
         }
     }
 
-    fn with_crosstalk(mut self, calibration_data: CalibrationData<E>) -> Self {
+    pub(crate) fn with_crosstalk(mut self, calibration_data: CalibrationData<E>) -> Self {
         self.raw_calibration_data.push(calibration_data);
         self
     }
