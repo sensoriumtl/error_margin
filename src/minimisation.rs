@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 
 use argmin::core::observers::{ObserverMode, SlogLogger};
-use argmin::core::{Operator, Jacobian, Executor};
+use argmin::core::{Executor, Jacobian, Operator};
 use argmin::solver::gaussnewton::GaussNewtonLS;
 use argmin::solver::linesearch::MoreThuenteLineSearch;
 use ndarray::{s, Array1, Array2};
 use ndarray_linalg::Scalar;
 
-use crate::Result;
 use crate::calibration::{Gas, Sensor};
 use crate::margin::Measurement;
+use crate::Result;
 
 #[derive(Clone)]
 pub(crate) struct Problem<E> {
@@ -73,13 +73,19 @@ impl<E: Scalar> Problem<E> {
 
         // Unwrap is safe because we panic above if any targets are missing from sensors
         // The above panic will (eventually) be handled so we can unwrap here safely
-        let degree = sensors.get(&measurement_targets[0]).unwrap().calibration().solution().len() - 1;
+        let degree = sensors
+            .get(&measurement_targets[0])
+            .unwrap()
+            .calibration()
+            .solution()
+            .len()
+            - 1;
 
-        let mut matrix: Array2<E> = Array2::zeros(
-            (measurement_targets.len(), (measurement_targets.len()) * degree)
-        );
+        let mut matrix: Array2<E> = Array2::zeros((
+            measurement_targets.len(),
+            (measurement_targets.len()) * degree,
+        ));
         let mut lhs: Array1<E> = Array1::zeros(measurement_targets.len());
-
 
         for (ii, target) in measurement_targets.iter().enumerate() {
             // This unwrap is safe because we already panicked above if any targets are missing
@@ -88,12 +94,13 @@ impl<E: Scalar> Problem<E> {
 
             // The element of the matrix corresponding to the linear signal for the `ii`th sensor
             // is unity.
-            matrix[[ii, ii*degree]] = E::one();
+            matrix[[ii, ii * degree]] = E::one();
 
             // The lhs vector is the `raw_measurements` minus any zero order contributions from the
             // crosstalk polynomials (ie: bits not proportional to any signal)
             lhs[ii] = raw_measurements.get(target).unwrap().value
-                - sensor.crosstalk()
+                - sensor
+                    .crosstalk()
                     .values()
                     .map(|coeffs| coeffs.solution()[0])
                     .sum();
@@ -104,20 +111,29 @@ impl<E: Scalar> Problem<E> {
                 // TODO: This is not true, check at the function head.
                 //
                 // This is the row index of `gas` in `matrix`
-                let index_of_gas = measurement_targets.iter().position(|target| target == gas)
+                let index_of_gas = measurement_targets
+                    .iter()
+                    .position(|target| target == gas)
                     .unwrap();
 
                 // Assign crosstalk coefficients for sensor `ii` due to gas with sensor at
                 // `index_of_gas`
-                matrix.slice_mut(s![ii, (index_of_gas*degree)..((index_of_gas+1)*degree)])
+                matrix
+                    .slice_mut(s![
+                        ii,
+                        (index_of_gas * degree)..((index_of_gas + 1) * degree)
+                    ])
                     .assign(&crosstalk_coeffs.solution().slice(s![1..]));
             }
         }
 
         dbg!(&matrix);
         dbg!(&lhs);
-        Self { matrix, lhs: lhs, degree }
-
+        Self {
+            matrix,
+            lhs: lhs,
+            degree,
+        }
     }
 }
 
@@ -137,8 +153,7 @@ impl Problem<f64> {
         // Define initial parameter vector
 
         // Set up solver
-        let solver = GaussNewtonLS::new(linesearch)
-            .with_tolerance(std::f64::EPSILON.sqrt())?;
+        let solver = GaussNewtonLS::new(linesearch).with_tolerance(std::f64::EPSILON.sqrt())?;
 
         // Run solver
         let res = Executor::new(self, solver)
@@ -161,10 +176,9 @@ impl<E: Scalar + std::convert::Into<f64>> Problem<E> {
         Problem {
             matrix: self.matrix.mapv(|x| x.into()),
             lhs: self.lhs.mapv(|x| x.into()),
-            degree: self.degree
+            degree: self.degree,
         }
     }
-
 }
 
 impl<E: Scalar> Problem<E> {
@@ -200,7 +214,8 @@ impl<E: Scalar> Problem<E> {
             for kk in 0..self.degree {
                 if jj == ii {
                     // If we are at jj then we take the derivative
-                    promoted[jj * self.degree + kk] = E::from(kk + 1).unwrap() * p.powi(i32::try_from(kk).unwrap());
+                    promoted[jj * self.degree + kk] =
+                        E::from(kk + 1).unwrap() * p.powi(i32::try_from(kk).unwrap());
                 } else {
                     // If not the derivative is zero
                     promoted[jj * self.degree + kk] = E::zero();
@@ -210,7 +225,6 @@ impl<E: Scalar> Problem<E> {
         self.matrix.dot(&promoted)
     }
 }
-
 
 impl<E: Scalar> Operator for Problem<E> {
     type Param = Array1<E>;
@@ -225,12 +239,14 @@ impl<E: Scalar> Jacobian for Problem<E> {
     type Param = Array1<E>;
     type Jacobian = Array2<E>;
 
-    fn jacobian(&self, p: &Self::Param) -> ::std::result::Result<Self::Jacobian, argmin::core::Error> {
+    fn jacobian(
+        &self,
+        p: &Self::Param,
+    ) -> ::std::result::Result<Self::Jacobian, argmin::core::Error> {
         let mut jacobian = Array2::zeros((p.len(), p.len()));
         for jj in 0..p.len() {
             let col = self.jacobian_column(p, jj);
-            jacobian.slice_mut(s![.., jj])
-                .assign(&col);
+            jacobian.slice_mut(s![.., jj]).assign(&col);
         }
         Ok(jacobian)
     }
@@ -244,7 +260,6 @@ mod tests {
 
     use super::Problem;
 
-
     #[test]
     fn parameter_vectors_are_correctly_promoted_to_polynomial_form() {
         let seed = 40;
@@ -254,7 +269,11 @@ mod tests {
         let params: Array1<f64> = Array1::from_iter((0..num_params).map(|_| rng.gen()));
         let degree = rng.gen_range(3..10);
 
-        let problem = Problem { matrix: Array2::zeros((1, 1)), lhs: Array1::zeros(1), degree };
+        let problem = Problem {
+            matrix: Array2::zeros((1, 1)),
+            lhs: Array1::zeros(1),
+            degree,
+        };
 
         let promoted = problem.promote(&params);
 
@@ -262,12 +281,14 @@ mod tests {
             let element_index = ii / degree;
             let expected_power = ii % degree;
 
-            approx::assert_relative_eq!(ele, params[element_index].powi(i32::try_from(expected_power + 1).unwrap()));
-
+            approx::assert_relative_eq!(
+                ele,
+                params[element_index].powi(i32::try_from(expected_power + 1).unwrap())
+            );
         }
     }
 
-    use ndarray_rand::{RandomExt, rand_distr::Uniform};
+    use ndarray_rand::{rand_distr::Uniform, RandomExt};
 
     #[test]
     fn jacobian_columns_matches_finite_difference() {
@@ -282,7 +303,11 @@ mod tests {
 
         let matrix = Array2::random((num_params, num_params * degree), Uniform::new(0., 10.));
 
-        let problem = Problem { matrix, lhs: Array1::zeros(1), degree };
+        let problem = Problem {
+            matrix,
+            lhs: Array1::zeros(1),
+            degree,
+        };
 
         let delta_rel = 1e-6;
 
@@ -294,14 +319,13 @@ mod tests {
             let mut modified_params_minus = params.clone();
             modified_params_minus[jj] -= delta;
 
-            let computed_at_plus= problem.compute(&modified_params_plus);
-            let computed_at_minus= problem.compute(&modified_params_minus);
+            let computed_at_plus = problem.compute(&modified_params_plus);
+            let computed_at_minus = problem.compute(&modified_params_minus);
             let numerical_col = (computed_at_plus - computed_at_minus) / (2. * delta);
 
             for (comp, num) in computed_jacobian_col.into_iter().zip(numerical_col) {
-                approx::assert_relative_eq!(comp, num, max_relative=1e-4);
+                approx::assert_relative_eq!(comp, num, max_relative = 1e-4);
             }
-
         }
     }
 }

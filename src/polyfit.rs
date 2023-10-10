@@ -143,7 +143,9 @@ pub fn polyfit<E: Copy + Float + Lapack + MulAssign + PartialOrd + Scalar + Scal
         }
     }
 
-    let variance_y = maybe_weights.unwrap().into_iter()
+    let variance_y = maybe_weights
+        .unwrap()
+        .into_iter()
         .map(|w| E::one() / *w)
         .collect::<Array1<_>>();
     let variance_matrix = Array2::from_diag(&variance_y);

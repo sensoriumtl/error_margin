@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::f64::EPSILON;
 
-use argmin::core::observers::{SlogLogger, ObserverMode};
+use argmin::core::observers::{ObserverMode, SlogLogger};
 use argmin::solver::gaussnewton::GaussNewtonLS;
 use argmin::solver::linesearch::MoreThuenteLineSearch;
-use ndarray::{ScalarOperand, Array1};
+use ndarray::{Array1, ScalarOperand};
 use ndarray_linalg::{Lapack, Scalar};
 
 use crate::calibration::Gas;
@@ -22,27 +22,39 @@ fn into_map<E>(solution: Array1<E>, measurement_targets: &[Gas]) -> HashMap<Gas,
     map
 }
 
-pub fn correct<E: Lapack + PartialOrd + Scalar + ScalarOperand + std::convert::Into<f64> + std::convert::From<f64>>(
+pub fn correct<
+    E: Lapack
+        + PartialOrd
+        + Scalar
+        + ScalarOperand
+        + std::convert::Into<f64>
+        + std::convert::From<f64>,
+>(
     raw_measurements: HashMap<Gas, Measurement<E>>,
     sensors: HashMap<Gas, Sensor<E>>,
     initial_parameters: Option<Array1<E>>,
-) -> Result<HashMap<Gas, Measurement<E>>>
-{
+) -> Result<HashMap<Gas, Measurement<E>>> {
     let measurement_targets = raw_measurements.keys().cloned().collect::<Vec<_>>();
-    let problem = Problem::build(&measurement_targets, &raw_measurements, &sensors)
-        .to_f64();
+    let problem = Problem::build(&measurement_targets, &raw_measurements, &sensors).to_f64();
 
     // TODO: casting to f64 because `solve` does not work with generics
     let initial_parameters: Array1<f64> = initial_parameters.map_or_else(
         || Array1::zeros(measurement_targets.len()),
-        |initial_parameters| initial_parameters.mapv(|x| x.into())
+        |initial_parameters| initial_parameters.mapv(|x| x.into()),
     );
 
-    let solution: Array1<E> = problem.solve(initial_parameters)?
-        .mapv(|x| x.into());
+    let solution: Array1<E> = problem.solve(initial_parameters)?.mapv(|x| x.into());
     let solution = into_map(solution, &measurement_targets)
         .into_iter()
-        .map(|(target, value)| (target, Measurement { value, uncertainty: E::zero() }))
+        .map(|(target, value)| {
+            (
+                target,
+                Measurement {
+                    value,
+                    uncertainty: E::zero(),
+                },
+            )
+        })
         .collect::<HashMap<_, _>>();
 
     Ok(solution)
@@ -147,15 +159,21 @@ pub fn reconstruct<E: Lapack + PartialOrd + Scalar + ScalarOperand>(
     Ok(value)
 }
 
-
 #[cfg(test)]
 mod tests {
-    use std::{ops::Range, collections::HashMap};
+    use std::{collections::HashMap, ops::Range};
 
-    use ndarray_rand::{rand::{Rng, SeedableRng}, rand_distr::Alphanumeric};
+    use ndarray_rand::{
+        rand::{Rng, SeedableRng},
+        rand_distr::Alphanumeric,
+    };
     use rand_isaac::Isaac64Rng;
 
-    use crate::{Result, calibration::{Gas, CalibrationData, Measurement, SensorBuilder}, multi::correct};
+    use crate::{
+        calibration::{CalibrationData, Gas, Measurement, SensorBuilder},
+        multi::correct,
+        Result,
+    };
 
     struct GeneratedPolynomial<const N: usize> {
         x: Vec<f64>,
@@ -201,7 +219,6 @@ mod tests {
         GeneratedPolynomial { x, y, coeffs }
     }
 
-
     #[test]
     fn errors_are_corrected_within_tolerance_for_two_sensor_system() -> Result<()> {
         const DEGREE: usize = 3;
@@ -217,14 +234,14 @@ mod tests {
         let window = Range { start, end };
 
         let targets = (0..num_sensors)
-            .map(|_| Gas((&mut rng)
-                .sample_iter(Alphanumeric)
-                .take(3)
-                .map(char::from)
-                .collect::<String>())
-            )
+            .map(|_| {
+                Gas((&mut rng)
+                    .sample_iter(Alphanumeric)
+                    .take(3)
+                    .map(char::from)
+                    .collect::<String>())
+            })
             .collect::<Vec<_>>();
-
 
         let mut sensors = HashMap::new();
         let mut measurements = HashMap::new();
@@ -233,13 +250,14 @@ mod tests {
         // same x-axis. This allows us to generate `signal_in_channel` which
         let polynomial: GeneratedPolynomial<DEGREE> =
             generate_polynomial(&mut rng, num_samples, window.clone());
-        let sample_idxs = targets.iter()
+        let sample_idxs = targets
+            .iter()
             .map(|target| (target, rng.gen_range(0..num_samples)))
             .collect::<HashMap<_, _>>();
-        let input_signal_in_channel = sample_idxs.iter()
+        let input_signal_in_channel = sample_idxs
+            .iter()
             .map(|(target, idx)| (*target, polynomial.x[*idx]))
             .collect::<HashMap<_, _>>();
-
 
         for target in targets.iter() {
             let mut measurement = 0.0;
@@ -265,10 +283,8 @@ mod tests {
                     .collect(),
             };
 
-
             let mut sensor = SensorBuilder::new(target.clone(), rng.gen(), rng.gen(), DEGREE - 1)
                 .with_calibration(calibration);
-
 
             // The measurement is the sum of the `input_signal_in_channel`, which is the true value
             // of the signal
@@ -277,7 +293,10 @@ mod tests {
             for cross_target in targets.iter().filter(|gas| *gas != target) {
                 let polynomial: GeneratedPolynomial<DEGREE> =
                     generate_polynomial(&mut rng, num_samples, window.clone());
-                println!("generating {target:?}, {cross_target:?}, {:?}", polynomial.coeffs);
+                println!(
+                    "generating {target:?}, {cross_target:?}, {:?}",
+                    polynomial.coeffs
+                );
                 let crosstalk = CalibrationData {
                     gas: cross_target.clone(),
                     concentration: polynomial.x.clone(),
@@ -305,7 +324,13 @@ mod tests {
             }
 
             sensors.insert(target.clone(), sensor.build()?);
-            measurements.insert(target.clone(), crate::margin::Measurement { value: measurement, uncertainty: 0.0 });
+            measurements.insert(
+                target.clone(),
+                crate::margin::Measurement {
+                    value: measurement,
+                    uncertainty: 0.0,
+                },
+            );
         }
 
         // Act
@@ -315,8 +340,10 @@ mod tests {
 
         // Assert
         for (target, calculated) in corrected {
-            let expected_value = input_signal_in_channel.get(&target).expect("value missing from expectations map");
-            approx::assert_relative_eq!(calculated.value, expected_value, max_relative=1e-10);
+            let expected_value = input_signal_in_channel
+                .get(&target)
+                .expect("value missing from expectations map");
+            approx::assert_relative_eq!(calculated.value, expected_value, max_relative = 1e-10);
         }
 
         Ok(())

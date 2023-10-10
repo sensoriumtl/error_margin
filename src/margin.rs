@@ -46,7 +46,6 @@ impl<E: Lapack + Scalar + ScalarOperand> Measurement<E> {
             .map(NormalDistribution::from)
             .collect();
 
-
         let product_distributions =
             coefficient_distributions
                 .iter()
@@ -82,8 +81,6 @@ impl<E: Lapack + Scalar + ScalarOperand> Measurement<E> {
             value: mean,
             uncertainty: standard_deviation,
         })
-
-
 
         // Create the distributions
         // let measurement: NormalDistribution<E> = NormalDistribution::from(self);
@@ -255,10 +252,7 @@ mod test {
                 power: jj + 1,
             };
             let expected = distribution_ii.covariance(&distribution_jj);
-            approx::assert_relative_eq!(
-                *calculated.get((ii, jj)).unwrap(),
-                expected
-            );
+            approx::assert_relative_eq!(*calculated.get((ii, jj)).unwrap(), expected);
         }
     }
 
@@ -283,7 +277,8 @@ mod test {
         from_mathematica.insert((0, 1), 2. * mean * standard_deviation.powi(2));
         from_mathematica.insert(
             (0, 2),
-            3. * standard_deviation.powi(2) * standard_deviation.mul_add(standard_deviation, mean.powi(2)),
+            3. * standard_deviation.powi(2)
+                * standard_deviation.mul_add(standard_deviation, mean.powi(2)),
         );
         from_mathematica.insert(
             (0, 3),
@@ -294,7 +289,10 @@ mod test {
         from_mathematica.insert(
             (0, 4),
             5. * standard_deviation.powi(2)
-                * 3.0f64.mul_add(standard_deviation.powi(4), (6. * mean.powi(2)).mul_add(standard_deviation.powi(2), mean.powi(4))),
+                * 3.0f64.mul_add(
+                    standard_deviation.powi(4),
+                    (6. * mean.powi(2)).mul_add(standard_deviation.powi(2), mean.powi(4)),
+                ),
         );
         from_mathematica.insert(
             (1, 2),
@@ -305,30 +303,51 @@ mod test {
         from_mathematica.insert(
             (1, 3),
             4. * standard_deviation.powi(2)
-                * 3.0f64.mul_add(standard_deviation.powi(4), 2.0f64.mul_add(mean.powi(4), 9. * mean.powi(2) * standard_deviation.powi(2))),
+                * 3.0f64.mul_add(
+                    standard_deviation.powi(4),
+                    2.0f64.mul_add(mean.powi(4), 9. * mean.powi(2) * standard_deviation.powi(2)),
+                ),
         );
         from_mathematica.insert(
             (1, 4),
             10. * mean
                 * standard_deviation.powi(2)
-                * 9.0f64.mul_add(standard_deviation.powi(4), (8. * mean.powi(2)).mul_add(standard_deviation.powi(2), mean.powi(4))),
+                * 9.0f64.mul_add(
+                    standard_deviation.powi(4),
+                    (8. * mean.powi(2)).mul_add(standard_deviation.powi(2), mean.powi(4)),
+                ),
         );
         from_mathematica.insert(
             (2, 3),
             12. * mean
                 * standard_deviation.powi(2)
-                * 8.0f64.mul_add(standard_deviation.powi(4), (7. * mean.powi(2)).mul_add(standard_deviation.powi(2), mean.powi(4))),
+                * 8.0f64.mul_add(
+                    standard_deviation.powi(4),
+                    (7. * mean.powi(2)).mul_add(standard_deviation.powi(2), mean.powi(4)),
+                ),
         );
         from_mathematica.insert(
             (2, 4),
             15. * standard_deviation.powi(2)
-                * 7.0f64.mul_add(standard_deviation.powi(6), (25. * mean.powi(2)).mul_add(standard_deviation.powi(4), (11. * mean.powi(4)).mul_add(standard_deviation.powi(2), mean.powi(6)))),
+                * 7.0f64.mul_add(
+                    standard_deviation.powi(6),
+                    (25. * mean.powi(2)).mul_add(
+                        standard_deviation.powi(4),
+                        (11. * mean.powi(4)).mul_add(standard_deviation.powi(2), mean.powi(6)),
+                    ),
+                ),
         );
         from_mathematica.insert(
             (3, 4),
             20. * mean
                 * standard_deviation.powi(2)
-                * 45.0f64.mul_add(standard_deviation.powi(6), (57. * mean.powi(2)).mul_add(standard_deviation.powi(4), (15. * mean.powi(4)).mul_add(standard_deviation.powi(2), mean.powi(6)))),
+                * 45.0f64.mul_add(
+                    standard_deviation.powi(6),
+                    (57. * mean.powi(2)).mul_add(
+                        standard_deviation.powi(4),
+                        (15. * mean.powi(4)).mul_add(standard_deviation.powi(2), mean.powi(6)),
+                    ),
+                ),
         );
 
         for (ii, jj) in (0..degree).tuple_combinations().filter(|(ii, jj)| ii != jj) {
@@ -362,25 +381,25 @@ mod test {
     //     let m1 = coeffs[0].mean;
     //     let m2 = coeffs[1].mean;
     //     let m3 = coeffs[2].mean;
-        // let m4 = coeffs[3].mean;
-        // let m5 = coeffs[4].mean;
-        //
-        // let from_mathematica = [
-        //     standard_deviation.powi(2) * (
-        //         m1
-        //             + 2. * mean * m2
-        //             + 3. * (mean.powi(2) + standard_deviation.powi(2)) * m3
-        //             + 4. * mean * (mean.powi(2) + 3. * standard_deviation.powi(2)) * m4
-        //             + 5. * (mean.powi(4) + 6. * mean.powi(2) * standard_deviation.powi(2) + 3. * standard_deviation.powi(4)) * m5
-        //     )
-        // ];
-        // let sigma_xy = sigma_xy(&measurement, &coeffs);
-        // dbg!(&sigma_xy);
-        //
-        //
-        // for (expected, actual) in from_mathematica.into_iter().zip(sigma_xy) {
-        //     approx::assert_relative_eq!(expected, actual);
-        // }
+    // let m4 = coeffs[3].mean;
+    // let m5 = coeffs[4].mean;
+    //
+    // let from_mathematica = [
+    //     standard_deviation.powi(2) * (
+    //         m1
+    //             + 2. * mean * m2
+    //             + 3. * (mean.powi(2) + standard_deviation.powi(2)) * m3
+    //             + 4. * mean * (mean.powi(2) + 3. * standard_deviation.powi(2)) * m4
+    //             + 5. * (mean.powi(4) + 6. * mean.powi(2) * standard_deviation.powi(2) + 3. * standard_deviation.powi(4)) * m5
+    //     )
+    // ];
+    // let sigma_xy = sigma_xy(&measurement, &coeffs);
+    // dbg!(&sigma_xy);
+    //
+    //
+    // for (expected, actual) in from_mathematica.into_iter().zip(sigma_xy) {
+    //     approx::assert_relative_eq!(expected, actual);
+    // }
 
     // }
 }

@@ -30,7 +30,7 @@ pub fn reconstruct<E: Lapack + PartialOrd + Scalar + ScalarOperand>(
 
 #[cfg(test)]
 mod test {
-    use std::{ops::Range, fs};
+    use std::{fs, ops::Range};
 
     use ndarray_rand::{
         rand::{Rng, SeedableRng},
@@ -136,13 +136,10 @@ mod test {
             .take_while(|(x, _)| sensor.calibration().window_contains(x))
         {
             let measurement = crate::margin::Measurement {
-                    value,
-                    uncertainty: value * 1e-5,
+                value,
+                uncertainty: value * 1e-5,
             };
-            let reconstruction = reconstruct(
-                &measurement,
-                &sensor,
-            )?;
+            let reconstruction = reconstruct(&measurement, &sensor)?;
             approx::assert_relative_eq!(actual, reconstruction.value, max_relative = 1e-10);
         }
 
@@ -206,12 +203,13 @@ mod test {
             let reconstruction = reconstruct(&measurement, &sensor)?;
             assert!((actual - reconstruction.value) < reconstruction.uncertainty);
 
-            writer.write_record(&[
+            writer
+                .write_record(&[
                     format!("{value}"),
                     format!("{}", reconstruction.value),
-                    format!("{}", reconstruction.uncertainty)
-                ]).unwrap();
-
+                    format!("{}", reconstruction.uncertainty),
+                ])
+                .unwrap();
         }
 
         Ok(())
