@@ -6,6 +6,9 @@ use argmin::solver::gaussnewton::GaussNewtonLS;
 use argmin::solver::linesearch::MoreThuenteLineSearch;
 use ndarray::{s, Array1, Array2};
 use ndarray_linalg::Scalar;
+use ndarray_rand::rand::Rng;
+use ndarray_rand::rand_distr::{StandardNormal, Distribution};
+use num_traits::Float;
 
 use crate::calibration::{Gas, Sensor};
 use crate::margin::Measurement;
@@ -44,7 +47,8 @@ pub struct Problem<E> {
     degree: usize,
 }
 
-impl<E: Scalar> Problem<E> {
+impl<E: Scalar> Problem<E>
+{
     /// This function DOES NOT sanity check what is passed to it.
     ///
     /// It is assumed that the caller has checked the contents of the passed maps, to ensure they
@@ -99,11 +103,11 @@ impl<E: Scalar> Problem<E> {
             // The lhs vector is the `raw_measurements` minus any zero order contributions from the
             // crosstalk polynomials (ie: bits not proportional to any signal)
             lhs[ii] = raw_measurements.get(target).unwrap().value
-                - sensor
-                    .crosstalk()
-                    .values()
-                    .map(|coeffs| coeffs.solution()[0])
-                    .sum();
+                    - sensor
+                        .crosstalk()
+                        .values()
+                        .map(|coeffs| coeffs.solution()[0])
+                        .sum();
 
             for (gas, crosstalk_coeffs) in sensor.crosstalk() {
                 // This unwrap is safe because we panic at the function head if any sensor does not
@@ -127,13 +131,94 @@ impl<E: Scalar> Problem<E> {
             }
         }
 
-        dbg!(&matrix);
-        dbg!(&lhs);
         Self {
             matrix,
             lhs,
             degree,
         }
+    }
+}
+
+
+impl<E> Problem<E>
+where
+    E: Copy + Float + Scalar,
+    StandardNormal: Distribution<E>,
+{
+    pub(crate) fn build_with_sampling(
+        measurement_targets: &[Gas],
+        raw_measurements: &HashMap<Gas, Measurement<E>>,
+        sensors: &HashMap<Gas, Sensor<E>>,
+        rng: &mut impl Rng,
+    ) -> Result<Self> {
+        // Check all the sensors in the list have an associated measurement
+        // TODO: Handle assertion failures gracefully with error handling.
+        assert_eq!(measurement_targets.len(), sensors.len());
+        for target in measurement_targets {
+            assert!(sensors.get(target).is_some());
+        }
+
+        // Unwrap is safe because we panic above if any targets are missing from sensors
+        // The above panic will (eventually) be handled so we can unwrap here safely
+        let degree = sensors
+            .get(&measurement_targets[0])
+            .unwrap()
+            .calibration()
+            .solution()
+            .len()
+            - 1;
+
+        let mut matrix: Array2<E> = Array2::zeros((
+            measurement_targets.len(),
+            (measurement_targets.len()) * degree,
+        ));
+        let mut lhs: Array1<E> = Array1::zeros(measurement_targets.len());
+
+        for (ii, target) in measurement_targets.iter().enumerate() {
+            // This unwrap is safe because we already panicked above if any targets are missing
+            // from sensors
+            let sensor = sensors.get(target).unwrap();
+
+            // The element of the matrix corresponding to the linear signal for the `ii`th sensor
+            // is unity.
+            matrix[[ii, ii * degree]] = E::one();
+
+            // The lhs vector is the `raw_measurements` minus any zero order contributions from the
+            // crosstalk polynomials (ie: bits not proportional to any signal)
+            lhs[ii] = raw_measurements.get(target).unwrap().sample(rng)?
+                    - sensor
+                        .crosstalk()
+                        .values()
+                        .map(|coeffs| coeffs.sample_zero_order_coeff(rng))
+                        .sum::<Result<E>>()?;
+
+            for (gas, crosstalk_coeffs) in sensor.crosstalk() {
+                // This unwrap is safe because we panic at the function head if any sensor does not
+                // have crosstalk spanning `measurement_targets`
+                // TODO: This is not true, check at the function head.
+                //
+                // This is the row index of `gas` in `matrix`
+                let index_of_gas = measurement_targets
+                    .iter()
+                    .position(|target| target == gas)
+                    .unwrap();
+
+                // Assign crosstalk coefficients for sensor `ii` due to gas with sensor at
+                // `index_of_gas`
+                matrix
+                    .slice_mut(s![
+                        ii,
+                        (index_of_gas * degree)..((index_of_gas + 1) * degree)
+                    ])
+                    .assign(&crosstalk_coeffs.sample_higher_order_coeffs(rng)?);
+            }
+        }
+
+        Ok(Self {
+            matrix,
+            lhs,
+            degree,
+        })
     }
 }
 

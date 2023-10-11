@@ -3,7 +3,11 @@ use ndarray::{Array1, Array2};
 
 use ndarray_linalg::Lapack;
 use ndarray_linalg::Scalar;
+use ndarray_rand::rand::Rng;
+use ndarray_rand::rand_distr::{Standard, Distribution, Normal, StandardNormal};
+use num_traits::Float;
 
+use crate::Result;
 use crate::{
     distributions::{
         DistributionToPower, Measure, Mixture, NormalDistribution, UncorrelatedProduct,
@@ -24,6 +28,16 @@ impl<E: Scalar> Measurement<E> {
             value,
             uncertainty: E::zero(),
         }
+    }
+}
+
+impl<E> Measurement<E>
+where
+    E: Copy + std::fmt::Debug + Float,
+    StandardNormal: Distribution<E> {
+    pub(crate) fn sample(self, rng: &mut impl Rng) -> Result<E> {
+        let dist = Normal::new(self.value, self.uncertainty)?;
+        Ok(dist.sample(rng))
     }
 }
 

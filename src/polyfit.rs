@@ -1,5 +1,7 @@
 use ndarray::{s, Array, Array0, Array1, Array2, Axis, ScalarOperand};
 use ndarray_linalg::{Inverse, Lapack, LeastSquaresSvd, Scalar};
+use ndarray_rand::rand::Rng;
+use ndarray_rand::rand_distr::{Standard, Normal, StandardNormal, Distribution};
 use num_traits::Float;
 
 use std::ops::{MulAssign, Range};
@@ -91,6 +93,30 @@ impl<E: Scalar> FitResult<E> {
 
     pub const fn window(&self) -> &Range<E> {
         &self.window
+    }
+}
+
+impl<E> FitResult<E>
+where
+    E: Float + Scalar,
+    StandardNormal: Distribution<E>,
+{
+    pub(crate) fn sample_zero_order_coeff(&self, rng: &mut impl Rng) -> Result<E> {
+        let dist = Normal::new(self.solution[0], Scalar::sqrt(self.covariance[[0, 0]]))?;
+        Ok(dist.sample(rng))
+    }
+
+    pub(crate) fn sample_higher_order_coeffs(&self, rng: &mut impl Rng) -> Result<Array1<E>> {
+        let mut result = Array1::zeros(self.solution.len() - 1);
+        for (ii, result) in result.iter_mut().enumerate() {
+            let index_of_coeff = ii + 1;
+            let dist = Normal::new(
+                self.solution[index_of_coeff],
+                Scalar::sqrt(self.covariance[[index_of_coeff, index_of_coeff]])
+            )?;
+            *result = dist.sample(rng);
+        }
+        Ok(result)
     }
 }
 
