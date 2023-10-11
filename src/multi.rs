@@ -41,7 +41,7 @@ pub fn correct<
     initial_parameters: Option<Array1<E>>,
     // whether to compute the central value given the measurements, or to compute the
     // distributional properties
-    strategy: Strategy,
+    strategy: &Strategy,
 ) -> Result<HashMap<Gas, Measurement<E>>>
 where
     StandardNormal: Distribution<E>,
@@ -54,7 +54,7 @@ where
             raw_measurements,
             sensors,
             initial_parameters,
-            num_samples,
+            *num_samples,
         )?,
     };
     Ok(results)
@@ -102,7 +102,7 @@ fn compute_central_value<
 
 /// Converts a vec of n-dimensional samples to distributional quantities, computing the mean
 /// and standard deviation of the n-dimensional dataset
-fn form_measurements<E: Scalar>(samples: Vec<Array1<E>>) -> Array1<Measurement<E>> {
+fn form_measurements<E: Scalar>(samples: &[Array1<E>]) -> Array1<Measurement<E>> {
     let means = samples
         .iter()
         .fold(Array1::zeros(samples[0].len()), |a, b| a + b)
@@ -115,16 +115,14 @@ fn form_measurements<E: Scalar>(samples: Vec<Array1<E>>) -> Array1<Measurement<E
         })
         .mapv(|summed: E| summed / E::from(samples.len() - 1).unwrap());
 
-    let measurements = means
+    means
         .into_iter()
         .zip(variance)
         .map(|(mean, variance)| Measurement {
             value: mean,
             uncertainty: variance.sqrt(),
         })
-        .collect();
-
-    measurements
+        .collect()
 }
 
 fn build_and_evaluate_distribution<
@@ -172,11 +170,11 @@ where
                 let solution = arr.mapv(std::convert::Into::into);
                 solutions.push(solution);
             }
-            Err(e) => eprintln!("Error in solve step {:?}", e),
+            Err(e) => eprintln!("Error in solve step {e:?}"),
         }
     }
 
-    let solution = form_measurements(solutions);
+    let solution = form_measurements(&solutions);
 
     let solution = into_map(solution, &measurement_targets);
 
@@ -205,7 +203,7 @@ pub fn reconstruct<E: Lapack + PartialOrd + Scalar + ScalarOperand>(
 mod tests {
     use std::{collections::HashMap, ops::Range};
 
-    use ndarray::Array;
+    use ndarray::{Array, Array1};
     use ndarray_rand::{
         rand::{Rng, SeedableRng},
         rand_distr::{Alphanumeric, Normal},
@@ -382,7 +380,7 @@ mod tests {
             &measurements,
             &sensors,
             initial_guess,
-            Strategy::CentralValue,
+            &Strategy::CentralValue,
         )?;
 
         // Assert
@@ -515,7 +513,7 @@ mod tests {
             &measurements,
             &sensors,
             initial_guess,
-            Strategy::SampleDistribution(100),
+            &Strategy::SampleDistribution(100),
         )?;
 
         // Assert
@@ -538,11 +536,11 @@ mod tests {
         let num_points = 2;
         let mean = rng.gen();
         let standard_deviation: f64 = mean / 100.;
-        let samples = (0..num_samples)
+        let samples: Vec<Array1<f64>> = (0..num_samples)
             .map(|_| Array::random(num_points, Normal::new(mean, standard_deviation).unwrap()))
             .collect();
 
-        let measurements = form_measurements(samples);
+        let measurements = form_measurements(&samples);
 
         for measurement in measurements {
             approx::assert_relative_eq!(measurement.value, mean, max_relative = 1e-2);

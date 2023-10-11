@@ -1,7 +1,7 @@
 use ndarray::{s, Array, Array0, Array1, Array2, Axis, ScalarOperand};
 use ndarray_linalg::{Inverse, Lapack, LeastSquaresSvd, Scalar};
 use ndarray_rand::rand::Rng;
-use ndarray_rand::rand_distr::{Distribution, Normal, Standard, StandardNormal};
+use ndarray_rand::rand_distr::{Distribution, Normal, StandardNormal};
 use num_traits::Float;
 
 use std::ops::{MulAssign, Range};

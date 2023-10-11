@@ -4,7 +4,7 @@ use ndarray::{Array1, Array2};
 use ndarray_linalg::Lapack;
 use ndarray_linalg::Scalar;
 use ndarray_rand::rand::Rng;
-use ndarray_rand::rand_distr::{Distribution, Normal, Standard, StandardNormal};
+use ndarray_rand::rand_distr::{Distribution, Normal, StandardNormal};
 use num_traits::Float;
 
 use crate::Result;
