@@ -4,7 +4,7 @@ use ndarray::{Array1, Array2};
 use ndarray_linalg::Lapack;
 use ndarray_linalg::Scalar;
 use ndarray_rand::rand::Rng;
-use ndarray_rand::rand_distr::{Standard, Distribution, Normal, StandardNormal};
+use ndarray_rand::rand_distr::{Distribution, Normal, Standard, StandardNormal};
 use num_traits::Float;
 
 use crate::Result;
@@ -34,7 +34,8 @@ impl<E: Scalar> Measurement<E> {
 impl<E> Measurement<E>
 where
     E: Copy + std::fmt::Debug + Float,
-    StandardNormal: Distribution<E> {
+    StandardNormal: Distribution<E>,
+{
     pub(crate) fn sample(self, rng: &mut impl Rng) -> Result<E> {
         let dist = Normal::new(self.value, self.uncertainty)?;
         Ok(dist.sample(rng))
@@ -171,7 +172,6 @@ mod test {
     use crate::distributions::{DistributionToPower, Measure, NormalDistribution};
 
     use super::sigma_x;
-
 
     #[test]
     fn polynomial_covariance_matrix_diagonal_is_generated_correctly() {

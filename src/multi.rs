@@ -47,8 +47,15 @@ where
     StandardNormal: Distribution<E>,
 {
     let results = match strategy {
-        Strategy::CentralValue => compute_central_value(raw_measurements, sensors, initial_parameters)?,
-        Strategy::SampleDistribution(num_samples) => build_and_evaluate_distribution(raw_measurements, sensors, initial_parameters, num_samples)?,
+        Strategy::CentralValue => {
+            compute_central_value(raw_measurements, sensors, initial_parameters)?
+        }
+        Strategy::SampleDistribution(num_samples) => build_and_evaluate_distribution(
+            raw_measurements,
+            sensors,
+            initial_parameters,
+            num_samples,
+        )?,
     };
     Ok(results)
 }
@@ -64,8 +71,7 @@ fn compute_central_value<
     raw_measurements: &HashMap<Gas, Measurement<E>>,
     sensors: &HashMap<Gas, Sensor<E>>,
     initial_parameters: Option<Array1<E>>,
-) -> Result<HashMap<Gas, Measurement<E>>>{
-
+) -> Result<HashMap<Gas, Measurement<E>>> {
     let measurement_targets = raw_measurements.keys().cloned().collect::<Vec<_>>();
     let problem = Problem::build(&measurement_targets, raw_measurements, sensors).into_f64();
 
@@ -75,7 +81,9 @@ fn compute_central_value<
         |initial_parameters| initial_parameters.mapv(std::convert::Into::into),
     );
 
-    let solution: Array1<E> = problem.solve(initial_parameters)?.mapv(std::convert::Into::into);
+    let solution: Array1<E> = problem
+        .solve(initial_parameters)?
+        .mapv(std::convert::Into::into);
     let solution = into_map(solution, &measurement_targets)
         .into_iter()
         .map(|(target, value)| {
@@ -94,22 +102,27 @@ fn compute_central_value<
 
 /// Converts a vec of n-dimensional samples to distributional quantities, computing the mean
 /// and standard deviation of the n-dimensional dataset
-fn form_measurements<E: Scalar>(
-    samples: Vec<Array1<E>>,
-) -> Array1<Measurement<E>> {
-    let means = samples.iter()
+fn form_measurements<E: Scalar>(samples: Vec<Array1<E>>) -> Array1<Measurement<E>> {
+    let means = samples
+        .iter()
         .fold(Array1::zeros(samples[0].len()), |a, b| a + b)
         .mapv(|summed: E| summed / E::from(samples.len()).unwrap());
 
-    let variance = samples.iter()
-        .fold(Array1::zeros(samples[0].len()), |a, b| a + (b - &means).mapv(|x| x.powi(2)))
+    let variance = samples
+        .iter()
+        .fold(Array1::zeros(samples[0].len()), |a, b| {
+            a + (b - &means).mapv(|x| x.powi(2))
+        })
         .mapv(|summed: E| summed / E::from(samples.len() - 1).unwrap());
 
-    let measurements = means.into_iter()
+    let measurements = means
+        .into_iter()
         .zip(variance)
-        .map(|(mean, variance)| Measurement { value: mean, uncertainty: variance.sqrt() })
+        .map(|(mean, variance)| Measurement {
+            value: mean,
+            uncertainty: variance.sqrt(),
+        })
         .collect();
-
 
     measurements
 }
@@ -131,7 +144,6 @@ fn build_and_evaluate_distribution<
 where
     StandardNormal: Distribution<E>,
 {
-
     let state = 40;
     let mut rng = Isaac64Rng::seed_from_u64(state);
 
@@ -141,13 +153,17 @@ where
     let initial_parameters: Array1<f64> = initial_parameters.map_or_else(
         || Array1::zeros(measurement_targets.len()),
         |initial_parameters| initial_parameters.mapv(std::convert::Into::into),
-        );
+    );
 
     let mut solutions = vec![];
     for _ in 0..num_samples {
-
-        let problem = Problem::build_with_sampling(&measurement_targets, raw_measurements, sensors, &mut rng)?.into_f64();
-
+        let problem = Problem::build_with_sampling(
+            &measurement_targets,
+            raw_measurements,
+            sensors,
+            &mut rng,
+        )?
+        .into_f64();
 
         // If solve fails for some parameter we just skip
         // TODO: a better strategy to avoid missing problematic parameter sets
@@ -158,7 +174,6 @@ where
             }
             Err(e) => eprintln!("Error in solve step {:?}", e),
         }
-
     }
 
     let solution = form_measurements(solutions);
@@ -193,7 +208,8 @@ mod tests {
     use ndarray::Array;
     use ndarray_rand::{
         rand::{Rng, SeedableRng},
-        rand_distr::{Alphanumeric, Normal}, RandomExt,
+        rand_distr::{Alphanumeric, Normal},
+        RandomExt,
     };
     use rand_isaac::Isaac64Rng;
 
@@ -362,7 +378,12 @@ mod tests {
         // Act
 
         let initial_guess = None;
-        let corrected = correct(&measurements, &sensors, initial_guess, Strategy::CentralValue)?;
+        let corrected = correct(
+            &measurements,
+            &sensors,
+            initial_guess,
+            Strategy::CentralValue,
+        )?;
 
         // Assert
         for (target, calculated) in corrected {
@@ -490,7 +511,12 @@ mod tests {
         // Act
 
         let initial_guess = None;
-        let corrected = correct(&measurements, &sensors, initial_guess, Strategy::SampleDistribution(100))?;
+        let corrected = correct(
+            &measurements,
+            &sensors,
+            initial_guess,
+            Strategy::SampleDistribution(100),
+        )?;
 
         // Assert
         for (target, calculated) in corrected {
@@ -502,7 +528,6 @@ mod tests {
 
         Ok(())
     }
-
 
     #[test]
     fn means_and_standard_deviations_are_successfully_reconstructed_from_samples() {
@@ -520,8 +545,12 @@ mod tests {
         let measurements = form_measurements(samples);
 
         for measurement in measurements {
-            approx::assert_relative_eq!(measurement.value, mean, max_relative=1e-2);
-            approx::assert_relative_eq!(measurement.uncertainty, standard_deviation, max_relative=1e-2);
+            approx::assert_relative_eq!(measurement.value, mean, max_relative = 1e-2);
+            approx::assert_relative_eq!(
+                measurement.uncertainty,
+                standard_deviation,
+                max_relative = 1e-2
+            );
         }
     }
 }

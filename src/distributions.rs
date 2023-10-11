@@ -372,8 +372,6 @@ mod tests {
     use proptest::prelude::*;
     use rand_isaac::Isaac64Rng;
 
-
-
     use super::{
         DistributionToPower, Measure, Mixture, NormalDistribution, UncorrelatedProduct,
         WeightedDistribution,
@@ -575,7 +573,10 @@ mod tests {
 
         approx::assert_relative_eq!(
             product_distribution.variance(),
-            a_squared.expectation().mul_add(b_squared.expectation(), -a.expectation().powi(2) * b.expectation().powi(2))
+            a_squared.expectation().mul_add(
+                b_squared.expectation(),
+                -a.expectation().powi(2) * b.expectation().powi(2)
+            )
         );
     }
 
@@ -649,7 +650,13 @@ mod tests {
 
         approx::assert_relative_eq!(
             mixture.variance(),
-            mixture.expectation().mul_add(-mixture.expectation(), (2. * product_a.expectation()).mul_add(product_b.expectation(), product_a_sqr.expectation() + product_b_sqr.expectation()))
+            mixture.expectation().mul_add(
+                -mixture.expectation(),
+                (2. * product_a.expectation()).mul_add(
+                    product_b.expectation(),
+                    product_a_sqr.expectation() + product_b_sqr.expectation()
+                )
+            )
         );
     }
 
@@ -738,7 +745,13 @@ mod tests {
 
         approx::assert_relative_eq!(
             mixture.variance(),
-            mixture.expectation().mul_add(-mixture.expectation(), (2. * cross_term_a.expectation()).mul_add(cross_term_b.expectation(), product_a_sqr.expectation() + product_b_sqr.expectation()))
+            mixture.expectation().mul_add(
+                -mixture.expectation(),
+                (2. * cross_term_a.expectation()).mul_add(
+                    cross_term_b.expectation(),
+                    product_a_sqr.expectation() + product_b_sqr.expectation()
+                )
+            )
         );
     }
 
@@ -827,7 +840,13 @@ mod tests {
 
         approx::assert_relative_eq!(
             mixture.variance(),
-            mixture.expectation().mul_add(-mixture.expectation(), (2. * cross_term_a.expectation()).mul_add(cross_term_b.expectation(), product_a_sqr.expectation() + product_b_sqr.expectation()))
+            mixture.expectation().mul_add(
+                -mixture.expectation(),
+                (2. * cross_term_a.expectation()).mul_add(
+                    cross_term_b.expectation(),
+                    product_a_sqr.expectation() + product_b_sqr.expectation()
+                )
+            )
         );
     }
 
@@ -916,7 +935,13 @@ mod tests {
 
         approx::assert_relative_eq!(
             mixture.variance(),
-            mixture.expectation().mul_add(-mixture.expectation(), (2. * cross_term_a.expectation()).mul_add(cross_term_b.expectation(), product_a_sqr.expectation() + product_b_sqr.expectation()))
+            mixture.expectation().mul_add(
+                -mixture.expectation(),
+                (2. * cross_term_a.expectation()).mul_add(
+                    cross_term_b.expectation(),
+                    product_a_sqr.expectation() + product_b_sqr.expectation()
+                )
+            )
         );
     }
 
@@ -1005,7 +1030,13 @@ mod tests {
 
         approx::assert_relative_eq!(
             mixture.variance(),
-            mixture.expectation().mul_add(-mixture.expectation(), (2. * cross_term_a.expectation()).mul_add(cross_term_b.expectation(), product_a_sqr.expectation() + product_b_sqr.expectation()))
+            mixture.expectation().mul_add(
+                -mixture.expectation(),
+                (2. * cross_term_a.expectation()).mul_add(
+                    cross_term_b.expectation(),
+                    product_a_sqr.expectation() + product_b_sqr.expectation()
+                )
+            )
         );
     }
 
@@ -1090,7 +1121,13 @@ mod tests {
 
         approx::assert_relative_eq!(
             mixture.variance(),
-            mixture.expectation().mul_add(-mixture.expectation(), 2.0f64.mul_add(cross_term.expectation(), product_a_sqr.expectation() + product_b_sqr.expectation()))
+            mixture.expectation().mul_add(
+                -mixture.expectation(),
+                2.0f64.mul_add(
+                    cross_term.expectation(),
+                    product_a_sqr.expectation() + product_b_sqr.expectation()
+                )
+            )
         );
     }
 
@@ -1175,7 +1212,13 @@ mod tests {
 
         approx::assert_relative_eq!(
             mixture.variance(),
-            mixture.expectation().mul_add(-mixture.expectation(), 2.0f64.mul_add(cross_term.expectation(), product_a_sqr.expectation() + product_b_sqr.expectation()))
+            mixture.expectation().mul_add(
+                -mixture.expectation(),
+                2.0f64.mul_add(
+                    cross_term.expectation(),
+                    product_a_sqr.expectation() + product_b_sqr.expectation()
+                )
+            )
         );
     }
 }

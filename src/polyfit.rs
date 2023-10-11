@@ -1,7 +1,7 @@
 use ndarray::{s, Array, Array0, Array1, Array2, Axis, ScalarOperand};
 use ndarray_linalg::{Inverse, Lapack, LeastSquaresSvd, Scalar};
 use ndarray_rand::rand::Rng;
-use ndarray_rand::rand_distr::{Standard, Normal, StandardNormal, Distribution};
+use ndarray_rand::rand_distr::{Distribution, Normal, Standard, StandardNormal};
 use num_traits::Float;
 
 use std::ops::{MulAssign, Range};
@@ -112,7 +112,7 @@ where
             let index_of_coeff = ii + 1;
             let dist = Normal::new(
                 self.solution[index_of_coeff],
-                Scalar::sqrt(self.covariance[[index_of_coeff, index_of_coeff]])
+                Scalar::sqrt(self.covariance[[index_of_coeff, index_of_coeff]]),
             )?;
             *result = dist.sample(rng);
         }

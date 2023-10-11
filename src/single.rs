@@ -27,7 +27,7 @@ pub fn reconstruct<E: Lapack + PartialOrd + Scalar + ScalarOperand>(
 
 #[cfg(test)]
 mod test {
-    use std::{ops::Range};
+    use std::ops::Range;
 
     use ndarray_rand::{
         rand::{Rng, SeedableRng},

@@ -7,7 +7,7 @@ use argmin::solver::linesearch::MoreThuenteLineSearch;
 use ndarray::{s, Array1, Array2};
 use ndarray_linalg::Scalar;
 use ndarray_rand::rand::Rng;
-use ndarray_rand::rand_distr::{StandardNormal, Distribution};
+use ndarray_rand::rand_distr::{Distribution, StandardNormal};
 use num_traits::Float;
 
 use crate::calibration::{Gas, Sensor};
@@ -47,8 +47,7 @@ pub struct Problem<E> {
     degree: usize,
 }
 
-impl<E: Scalar> Problem<E>
-{
+impl<E: Scalar> Problem<E> {
     /// This function DOES NOT sanity check what is passed to it.
     ///
     /// It is assumed that the caller has checked the contents of the passed maps, to ensure they
@@ -103,11 +102,11 @@ impl<E: Scalar> Problem<E>
             // The lhs vector is the `raw_measurements` minus any zero order contributions from the
             // crosstalk polynomials (ie: bits not proportional to any signal)
             lhs[ii] = raw_measurements.get(target).unwrap().value
-                    - sensor
-                        .crosstalk()
-                        .values()
-                        .map(|coeffs| coeffs.solution()[0])
-                        .sum();
+                - sensor
+                    .crosstalk()
+                    .values()
+                    .map(|coeffs| coeffs.solution()[0])
+                    .sum();
 
             for (gas, crosstalk_coeffs) in sensor.crosstalk() {
                 // This unwrap is safe because we panic at the function head if any sensor does not
@@ -138,7 +137,6 @@ impl<E: Scalar> Problem<E>
         }
     }
 }
-
 
 impl<E> Problem<E>
 where
@@ -186,11 +184,11 @@ where
             // The lhs vector is the `raw_measurements` minus any zero order contributions from the
             // crosstalk polynomials (ie: bits not proportional to any signal)
             lhs[ii] = raw_measurements.get(target).unwrap().sample(rng)?
-                    - sensor
-                        .crosstalk()
-                        .values()
-                        .map(|coeffs| coeffs.sample_zero_order_coeff(rng))
-                        .sum::<Result<E>>()?;
+                - sensor
+                    .crosstalk()
+                    .values()
+                    .map(|coeffs| coeffs.sample_zero_order_coeff(rng))
+                    .sum::<Result<E>>()?;
 
             for (gas, crosstalk_coeffs) in sensor.crosstalk() {
                 // This unwrap is safe because we panic at the function head if any sensor does not
