@@ -4,16 +4,7 @@ use ndarray_linalg::Scalar;
 #[derive(Clone, Copy)]
 /// A normal distribution
 ///
-/// We assume the *signal* measured in the system is characterised by a ln-normal distribution. This
-/// lets us consider the signal (and fitting variables) to be characterised by a Normal
-/// distribution.
-///
-/// The normal distribution is characterised by mean $\mu$, standard deviation $\sigma$
-///
-/// $$
-///     f \left(x\right) = \frac{1}{\sqrt{2 \pi} \sigma} \exp\left[- \frac{1}{2} \frac{x -
-///     \mu}{\sigma} \right]
-/// $$
+/// The normal distribution `N(mean, std_dev**2)`.
 pub struct NormalDistribution<T> {
     pub(crate) mean: T,
     pub(crate) standard_deviation: T,
@@ -36,32 +27,44 @@ impl<T: Copy> NormalDistribution<T> {
 }
 
 #[derive(Clone, Copy)]
-/// We commonly want to compute distributional properties of normal distributions raised to the
-/// $n$th power.
+/// An arbitrary probability distribution raised to the `n`th power.
+///
+/// We often want to compute expectation values and variances between probability distributions
+/// with equal mean and standard deviation but raised to different powers.
 pub struct DistributionToPower<D> {
     pub(crate) distribution: D,
     pub(crate) power: usize,
 }
 
 #[derive(Clone, Copy)]
-/// The product of uncorrelated distributions with separable expectation values
+/// A probability distribution, which is the product of two uncorrelated distributions.
+///
+/// In calculating observables we often need to compute the expectation of products. For example
+/// when finding the concentration we need to multiply polynomial fit coefficients with raw
+/// measurements.
+///
+/// No attempt is made to check that the two underlying distributions are not equal. If the caller
+/// sets `a = b` this will lead to undefined behaviour.
 pub struct UncorrelatedProduct<D> {
     pub(crate) a: D,
     pub(crate) b: D,
 }
 
-//TODO it is not nice that this has a `T`, whle the other distributions do not..
 #[derive(Clone, Copy)]
+/// A weighted distribution is a component of a mixture distribution.
 pub struct WeightedDistribution<T, D> {
     pub(crate) distribution: D,
     pub(crate) weight: T,
 }
 
 #[derive(Clone)]
-/// A mixture distribution is the sum of distributions multiplied by weights
+/// A mixture distribution is the sum of underlying distributions multiplied by weights
 pub struct Mixture<T, D>(pub(crate) Vec<WeightedDistribution<T, D>>);
 
+
+/// Moment is the base trait for a probability distribution.
 pub trait Moment<T> {
+    /// Return the `n`th moment of the underlying distribution.
     fn moment(&self, n: usize) -> T;
 }
 
@@ -88,12 +91,18 @@ impl<T: Scalar> Moment<T> for NormalDistribution<T> {
 /// Interface trait to allow for computation of common properties of probability distributions
 pub trait Measure<T: Scalar> {
     /// The variance of a distribution is always $E[x^2] - E[x]^2$
-    /// We implement this on the concrete distributions to prevent implementation of a separate
-    /// trait for squaring the distribution.
+    ///
+    /// Note that this is implemented on the concrete distribution, rather than in `Moment` to
+    /// avoid the need for an additional trait for squaring the distribution.
     fn variance(&self) -> T;
 
     fn expectation(&self) -> T;
 
+    /// The covariance of the distribution with a normal distribution raised to `n`
+    ///
+    /// It is not necessary to make the `other` parameter generic as for this application it will
+    /// always be a normal distribution. The covariance of two distributions is given by
+    /// $ Cov(x, y) = E[x y] - E[x]E[y] $.
     fn covariance(&self, other: &DistributionToPower<NormalDistribution<T>>) -> T;
 }
 
@@ -104,7 +113,6 @@ impl<T: Scalar> Measure<T> for DistributionToPower<NormalDistribution<T>> {
         self.distribution.moment(self.power)
     }
 
-    /// The variance of a distribution is $E[x^2] - E[x]^2$
     fn variance(&self) -> T {
         Self {
             distribution: self.distribution,
@@ -116,7 +124,8 @@ impl<T: Scalar> Measure<T> for DistributionToPower<NormalDistribution<T>> {
 
     fn covariance(&self, other: &Self) -> T {
         if self.distribution == other.distribution {
-            // If the distributions are equal we calculate as E[xy] - E[x]E[y]
+            // If the distributions are equal we calculate as E[x^{i + j}] - E[x^i]E[x^j]
+            // where `i` is the power of `self` and `j` is the power of `other`.
             Self {
                 distribution: self.distribution,
                 power: other.power + self.power,
@@ -132,15 +141,12 @@ impl<T: Scalar> Measure<T> for DistributionToPower<NormalDistribution<T>> {
 }
 
 impl<T: Scalar> Measure<T> for UncorrelatedProduct<DistributionToPower<NormalDistribution<T>>> {
-    /// The expectation value of a normal distribution raised to `n` is the `n`th moment of the
-    /// underlying distribution $E[x^n]$.
+    /// As the distributions are uncorrelated the expectation is seperable.
     fn expectation(&self) -> T {
         self.a.distribution.moment(self.a.power) * self.b.distribution.moment(self.b.power)
     }
 
-    /// The variance of a distribution is $E[x^2] - E[x]^2$
-    /// As the product is comprised of uncorrelated distributions we can write
-    ///
+    /// As the product is comprised of uncorrelated distributions we can separate
     /// $ \sigma^2 = E[(xy)^2] - E[xy]^2 = E[x^2]E[y^2] - (E[x] E[y])^2
     fn variance(&self) -> T {
         DistributionToPower {
@@ -157,6 +163,8 @@ impl<T: Scalar> Measure<T> for UncorrelatedProduct<DistributionToPower<NormalDis
     }
 
     fn covariance(&self, other: &DistributionToPower<NormalDistribution<T>>) -> T {
+        // if `self.a == other` then we form a new product where `a` is raised to the appropriate
+        // power
         if self.a.distribution == other.distribution {
             Self {
                 a: DistributionToPower {
@@ -167,6 +175,8 @@ impl<T: Scalar> Measure<T> for UncorrelatedProduct<DistributionToPower<NormalDis
             }
             .expectation()
                 - self.expectation() * other.expectation()
+        // if `self.b == other` then we form a new product where `b` is raised to the appropriate
+        // power
         } else if self.b.distribution == other.distribution {
             Self {
                 a: self.a,
@@ -177,6 +187,7 @@ impl<T: Scalar> Measure<T> for UncorrelatedProduct<DistributionToPower<NormalDis
             }
             .expectation()
                 - self.expectation() * other.expectation()
+        // else all the distributions are uncorrelated and we return `0`
         } else {
             T::zero()
         }
@@ -184,8 +195,8 @@ impl<T: Scalar> Measure<T> for UncorrelatedProduct<DistributionToPower<NormalDis
 }
 
 impl<T: Scalar> Measure<T> for Mixture<T, DistributionToPower<NormalDistribution<T>>> {
-    /// The expectation value of a normal distribution raised to `n` is the `n`th moment of the
-    /// underlying distribution $E[x^n]$.
+    /// The expectation value of a mixture distribution is the weighted sum of the expectation
+    /// values for the underlying distribution $E[x^n]$.
     fn expectation(&self) -> T {
         self.0
             .iter()
@@ -252,10 +263,7 @@ impl<T: Scalar> Measure<T> for Mixture<T, DistributionToPower<NormalDistribution
 }
 
 impl<T: Scalar> Measure<T>
-    for Mixture<T, UncorrelatedProduct<DistributionToPower<NormalDistribution<T>>>>
-{
-    /// The expectation value of a normal distribution raised to `n` is the `n`th moment of the
-    /// underlying distribution $E[x^n]$.
+    for Mixture<T, UncorrelatedProduct<DistributionToPower<NormalDistribution<T>>>> {
     fn expectation(&self) -> T {
         self.0
             .iter()

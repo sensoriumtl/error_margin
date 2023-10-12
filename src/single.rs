@@ -1,18 +1,31 @@
+
 use ndarray::ScalarOperand;
 use ndarray_linalg::{Lapack, Scalar};
 
 use crate::polyfit::Polynomial;
 use crate::{calibration::Sensor, margin::Measurement};
 
+/// Estimate the concentration and error from a raw measurement.
+///
+/// This function uses a [`Sensor`] with a pre-computed calibration curve to compute the gas
+/// concentration for a given [`Measurement`]. In a single-gas sensor the [`Measurement`] is simply
+/// computed from the raw signal. In a multi-gas system the [`Measurement`] for [`Sensor`] should be computed from
+/// the error correction algorithm in [`error_margin::multi`] before being passed to this function. This is
+/// because the calibration curve associated with [`Sensor`] is computed assuming a single
+/// absorbing species is in the chamber. Using data which has not been error-corrected will lead to
+/// erroneous results.
+///
+/// # Panics
+///
+/// The function will panic if the [`Measurement`] contains a value outside the window of validity
+/// for the [`Sensor`] calibration curve. No attempt is currently made to extrapolate outside the
+/// region. This behaviour is not ideal, in the future the method should return a result.
 pub fn reconstruct<E: Lapack + PartialOrd + Scalar + ScalarOperand>(
     measurement: &Measurement<E>,
     sensor: &Sensor<E>,
 ) -> Measurement<E> {
-    // When we have a single measurement we can just use the data from the fit, and the uncertainty
-    // or the measurement. This gives
-
-    assert!(sensor.crosstalk().is_empty(), "for a single measurement there is only one absorbing species, so crosstalk is not supported");
     let calibration_curve = sensor.calibration();
+    // TODO: Gracefully handle this by returning a result
     assert!(
         calibration_curve.window_contains(&measurement.value),
         "measurement point {} must be in the range of calibration {:?}",

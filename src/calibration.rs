@@ -15,17 +15,44 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use crate::polyfit::{polyfit, FitResult};
 use crate::Result;
 
+/// Configuratin for a device
 pub struct Config<E> {
+    /// Degree of polynomial fit
+    ///
+    /// The degree is the highest power used in the fit. Currently we use the same degree of
+    /// polynomial fit for ALL fits for all sensors.
     pub polynomial_fit_degree: usize,
+    /// The operating frequency (or sampling rate) of the sensor in Hz
     pub operating_frequency: E,
+    /// The number of samples to generate when fitting.
+    ///
+    /// To estimate the error on the polynomial coefficients the fit must be carried out multiple
+    /// times. This is because the predominant error is on the x-axis variable, which the
+    /// polynomial fitting algorithm assumes to be error free.
+    ///
+    /// To overcome this we carry out `number_of_polyfit_samples` for each fit, sampling the `x`
+    /// valuse from a normal distribution. The fit coefficients and variances are then constructed
+    /// from the generated distribution.
     pub number_of_polyfit_samples: usize,
 }
 
-/// Build a system of sensors from a file path and config
+/// Build a system of sensors from a file path and configuration file.
 ///
-/// # Errors
-/// Returns an error if the file system has an incorrect structure, files have incorrect structure
-/// or if the polynomial fit fails.
+/// The `working_directory` is assumed to contain one sub-folder for each sensor in the device,
+/// with name equal to the gas the sensor detects.
+///
+/// Each sub-folder is expected to contain at minimum a `.toml` configuration file describing the sensor noise
+/// characteristic, and a `.csv` file containing the raw calibration data. In a multigas
+/// sensing problem each sub-folder will contain additional `.csv` files with the crosstalk data.
+///
+/// The calibration data is expected to be in a 5-column csv file with format [`CalibrationCsvRow`]
+/// and the crosstalk data in an 9-column csv file with format [`CrosstalkCsvRow`]. The
+/// `sensor.toml` must contain all fields in [`SensorData`].
+///
+/// Note that at present it is assumed elsewhere that in a multigas system there is a single sensor
+/// for each absorbing species, and that crosstalk data is present at every sensor for every gas.
+/// This function TODO does not currently verify this is the case, but if it is not undefined
+/// behaviour will occur elsewhere.
 pub fn build<E>(working_directory: &Path, config: &Config<E>) -> Result<Vec<Sensor<E>>>
 where
     E: Float + Lapack + Scalar + ScalarOperand + Real,
@@ -50,10 +77,22 @@ where
 }
 
 #[derive(Deserialize, Serialize)]
+/// Minimal data to describe a photodetector
 pub struct SensorData<E> {
+    /// Noise equivalent power in nano-Watts
     pub noise_equivalent_power: E,
 }
 
+/// Process a directory `path` corresponding to a single [`Sensor`]
+///
+/// This function builds a single sensor from `.toml` and `.csv` files present at the root level in
+/// `path`. The `path` is expected to contain a `.toml` configuration file describing the sensor noise
+/// characteristic, and a `.csv` file containing the raw calibration data. In a multigas
+/// sensing problem it should also contain `.csv` files with the crosstalk data.
+///
+/// The calibration data is expected to be in a 5-column csv file with format [`CalibrationCsvRow`]
+/// and the crosstalk data in an 9-column csv file with format [`CrosstalkCsvRow`]. The
+/// `sensor.toml` must contain all fields in [`SensorData`].
 fn process<E: Scalar>(path: &PathBuf, config: &Config<E>) -> Result<SensorBuilder<E, Set>> {
     let target = Gas(path.file_stem().unwrap().to_string_lossy().into_owned()); // The target gas is the directory name
     println!("Working on target {target:?}");
@@ -107,6 +146,7 @@ fn process<E: Scalar>(path: &PathBuf, config: &Config<E>) -> Result<SensorBuilde
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Gas(pub String);
 
+/// Representation of one sensor
 pub struct Sensor<E: Scalar> {
     /// The molecule the sensor is designed to detect
     target: Gas,
@@ -116,7 +156,7 @@ pub struct Sensor<E: Scalar> {
     noise_equivalent_power: E,
     /// Calibration Curve
     calibration: FitResult<E>,
-    /// Crosstalk curves, may or may not be provided
+    /// Crosstalk curves
     crosstalk: HashMap<Gas, FitResult<E>>,
 }
 
@@ -238,6 +278,16 @@ where
     }
 }
 
+/// Generate a calibration curve from [`CalibrationData`]
+///
+/// In calibration data the predominant source of error is on the x-axis variables, which are the
+/// signal recorded from the detector. As the underlying polynomial regression algorithm cannot
+/// account for this `generate_fit` runs `number_of_samples` calculations of the polynomial
+/// coefficients.
+///
+/// For each sample new x-data is generated from the known distributions of the x-axis variables.
+/// Finally the coefficients of the polynomial are calculated from the mean of the result, along
+/// with their variance.
 fn generate_fit<E>(
     calibration_data: &CalibrationData<E>,
     noise_equivalent_power: E,
@@ -262,7 +312,6 @@ where
             &data.y,
             degree,
             data.w.as_ref().map(|x| &x[..]),
-            crate::polyfit::Scaling::Unscaled,
         )?;
         fits.push(fit);
     }
@@ -287,6 +336,18 @@ where
     Ok(fit)
 }
 
+/// Generate a crosstalk curve from [`CrosstalkData`]
+///
+/// In crosstalk data the error on x-axis and y-axis variables are the same order of magnitude:
+/// they both arise from measurement error of the signal.
+///
+/// Currently or each sample new x-data is generated from the known distributions of the x-axis variables.
+/// Finally the coefficients of the polynomial are calculated from the mean of the result, along
+/// with their variance.
+///
+/// TODO: We might not have to do this, maybe we can just take the single-pass results and get an
+/// estimate. Alternatively we might need to combine the two error sources. I do not have time to
+/// do this. Currently errors from `y` are being thrown away.
 fn generate_crosstalk_fit<E>(
     crosstalk_data: &CrosstalkData<E>,
     noise_equivalent_power: E,
@@ -311,7 +372,6 @@ where
             &data.y,
             degree,
             data.w.as_ref().map(|x| &x[..]),
-            crate::polyfit::Scaling::Unscaled,
         )?;
         fits.push(fit);
     }
@@ -337,9 +397,13 @@ where
     Ok(fit)
 }
 
+/// Calibration data for target gas in a sensor
 pub(crate) struct CalibrationData<E: Scalar> {
+    /// The gas the sensor is designed to measure
     pub(crate) gas: Gas,
+    /// The known concentration of gas
     pub(crate) concentration: Vec<E>,
+    /// The raw measurements corresponding to `concentration`
     pub(crate) raw_measurements: Vec<Measurement<E>>,
 }
 
@@ -357,6 +421,7 @@ pub(crate) struct CrosstalkData<E: Scalar> {
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Deserialize, Serialize)]
+/// A single row in the expected `.csv` file for calibration data
 pub struct CalibrationCsvRow<E> {
     pub concentration: E,
     pub raw_signal: E,
@@ -366,6 +431,7 @@ pub struct CalibrationCsvRow<E> {
 }
 
 #[derive(Deserialize, Serialize)]
+/// A single row in the expected `.csv` file for crosstalk data
 pub struct CrosstalkCsvRow<E> {
     pub raw_signal_target: E,
     pub raw_reference_target: E,
@@ -378,7 +444,15 @@ pub struct CrosstalkCsvRow<E> {
 }
 
 impl<E: Scalar + Copy + DeserializeOwned> CalibrationData<E> {
-    /// Create a `CalibrationData` from an on-disk representation
+    /// Create a [`CalibrationData`] from an on-disk representation
+    ///
+    /// Reads a `.csv` located at `filepath` into a [`CalibrationData`]. It is assumed that the
+    /// `.csv` has one header row. The format of the `.csv` file must contain 5-columns, matching
+    /// [`CalibrationCsvRow`]
+    ///
+    /// # Panics
+    /// - If the `filepath` does not have a `file_stem()`, or that stem cannot be converted to a
+    /// non-null `str`
     fn from_file(filepath: &PathBuf) -> Result<Self> {
         if !filepath.exists() {
             return Err("requested file not found".into());
@@ -420,7 +494,15 @@ impl<E: Scalar + Copy + DeserializeOwned> CalibrationData<E> {
 }
 
 impl<E: Scalar + Copy + DeserializeOwned> CrosstalkData<E> {
-    /// Create a `CrosstalkData` from an on-disk representation
+    /// Create a [`CrosstalkData`] from an on-disk representation
+    ///
+    /// Reads a `.csv` located at `filepath` into a [`CrosstalkData`]. It is assumed that the
+    /// `.csv` has one header row. The format of the `.csv` file must contain 8-columns, matching
+    /// [`CrosstalkCsvRow`]
+    ///
+    /// # Panics
+    /// - If the `filepath` does not have a `file_stem()`, or that stem cannot be converted to a
+    /// non-null `str`
     fn from_file(filepath: &PathBuf, crosstalk_gas: Gas) -> Result<Self> {
         if !filepath.exists() {
             return Err("requested file not found".into());
@@ -470,21 +552,31 @@ impl<E: Scalar + Copy + DeserializeOwned> CrosstalkData<E> {
     }
 }
 
+/// A raw measurement
 pub struct Measurement<E: Scalar> {
+    /// Signal recorded in the channel
     pub(crate) raw_signal: E,
+    /// Signal recorded in the reference
     pub(crate) raw_reference: E,
+    /// Signal emitted in the channel
     pub(crate) emergent_signal: E,
+    /// Signal emitted in the reference
     pub(crate) emergent_reference: E,
 }
 
 impl<E: Real + Scalar> Measurement<E> {
+    /// Returns the scaled signal
+    ///
+    /// To resolve large variations in concentration using a polynomial fit we form a composite
+    /// figure of merit, which is the natural logarithm of the ratio of recorded to emitted signals in the channel, divided
+    /// by that in the reference.
     pub(crate) fn scaled(&self) -> E {
         Scalar::ln(
             self.raw_signal / self.emergent_signal * self.emergent_reference / self.emergent_signal,
         )
     }
 
-    // The weights are the inverse of the variance of the measurement
+    /// The weights are the inverse of the variance of the measurement
     fn weight(&self, noise_equivalent_power: E, operation_frequency: E) -> E {
         let standard_deviation = noise_equivalent_power
             * Scalar::sqrt(operation_frequency)
@@ -500,6 +592,11 @@ where
     E: Scalar + Float,
     StandardNormal: Distribution<E>,
 {
+    /// Sample from the known distribution for a measurement
+    ///
+    /// Above we compute the central values and weights (inverse variance) for a measurement. For a
+    /// given `operation_frequency` and `noise_equivalent_power` this method takes these
+    /// distributional quantities, forms a normal distribution and returns a single sample.
     fn sample(
         &self,
         rng: &mut impl Rng,

@@ -13,6 +13,11 @@ use crate::polyfit::Polynomial;
 use crate::Result;
 use crate::{calibration::Sensor, margin::Measurement};
 
+/// Convert a solution vector to a [`HashMap`]
+///
+/// The coefficients are computed as an ordered `Vec`. Using a list of `measurement_targets` with
+/// the same ordering as `solution` this method constructs a [`HashMap`] linking the elements of
+/// `measurement_targets` to those of `solution`.
 fn into_map<E>(solution: Array1<E>, measurement_targets: &[Gas]) -> HashMap<Gas, E> {
     assert_eq!(solution.len(), measurement_targets.len());
     let mut map = HashMap::new();
@@ -22,11 +27,23 @@ fn into_map<E>(solution: Array1<E>, measurement_targets: &[Gas]) -> HashMap<Gas,
     map
 }
 
+/// Sampling strategy for error correction.
 pub enum Strategy {
+    /// Just compute the central value, ignoring error
     CentralValue,
+    /// Compute `n` samples to get an estimate of the variance.
     SampleDistribution(usize),
 }
 
+/// Carry out error correction
+///
+/// Given `raw_measurements` for `sensors` computes the corrected measurements, eliminating the
+/// effects of crosstalk.
+///
+/// # Panics
+/// - If the keys of 'raw_measurements` do not match those of `sensors`
+/// - If any sensor is missing full crosstalk data. All sensors must have a crosstalk curve for
+/// every gas in `raw_measurements`
 pub fn correct<
     E: Lapack
         + PartialOrd

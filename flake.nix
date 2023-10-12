@@ -33,17 +33,10 @@
 
 		    nativeBuildInputs = with pkgs; [ rustToolchain pkg-config ];
 		    buildInputs = with pkgs; [
-			darwin.apple_sdk.frameworks.Security
-			darwin.apple_sdk.frameworks.SystemConfiguration
-			darwin.apple_sdk.frameworks.OpenGL
-			darwin.apple_sdk.frameworks.CoreServices
-			darwin.apple_sdk.frameworks.AppKit
-			# cmake
-			fontconfig
 			gfortran
 			(pkgs.lib.getLib gfortran.cc)
 			openblas
-			openssl
+			# openssl
 			cpp-netlib
 			];
 		    commonArgs = {

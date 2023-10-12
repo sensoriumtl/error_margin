@@ -6,11 +6,21 @@ use crate::Result;
 /// Compute the outer product of two one-dimensional vectors of length (m x 1) and (n x 1)
 ///
 /// The outer product is the (m x n) matrix whose elements are products of elements in the first
-/// vector with those in the second
+/// vector with those in the second.
 ///
-/// $$
-///     ``\left(\mathbf{u} \otimes \mathbf{v}\right)_{ij} = u_i v_j``
-/// $$
+/// # Examples
+///
+/// ```
+/// use error_margin::math::outer_product;
+/// use ndarray::{arr1, arr2, Array1};
+///
+/// let u: Array1<f64> = arr1(&[1., 2., 3.]);
+/// let v = arr1(&[4., 5., 6.]);
+/// let outer_product = outer_product(&u, &v).unwrap();
+///
+/// let expected = arr2(&[[4., 5., 6.], [8., 10., 12.], [12., 15., 18.]]);
+/// assert_eq!(outer_product, expected);
+///```
 pub fn outer_product<T: LinalgScalar>(u: &Array1<T>, v: &Array1<T>) -> Result<Array2<T>> {
     let u: Array2<T> = u.clone().into_shape((u.len(), 1))?;
     let v: Array2<T> = v.clone().into_shape((1, v.len()))?;
@@ -20,7 +30,27 @@ pub fn outer_product<T: LinalgScalar>(u: &Array1<T>, v: &Array1<T>) -> Result<Ar
 
 /// Generate the Vandermode matrix of `degree` for observations `x`
 ///
-/// The Vandermonde matrix is ...
+/// The Vandermonde matrix is a (n + 1 x m + 1) matrix. Each rows of the matrix is a geometric
+/// progression for an individual observation variable `x` from power `0` to `degree` inclusive.
+///
+/// # Panics
+///
+/// The generator panics in the event that `degree` cannot be converted to `i32`. As the maximum
+/// value which can be represented by an `i32` is `2_147_483_647i32` this is unlikely to occur so
+/// the error probably does not need to be gracefully handled.
+///
+/// # Examples
+///
+/// ```
+/// use error_margin::math::vandermonde;
+/// use ndarray::arr2;
+///
+/// let observations: Vec<f64> = vec![2., 3.];
+/// let vander = vandermonde(&observations, 2).unwrap();
+///
+/// let expected = arr2(&[[1., 2., 4.], [1., 3., 9.]]);
+/// assert_eq!(vander, expected);
+/// ```
 pub fn vandermonde<T: Copy + Scalar>(x: &[T], degree: usize) -> Result<Array2<T>> {
     let vals = x.iter().flat_map(|xi| {
         (0..=degree).map(|i| xi.powi(i32::try_from(i).expect("{i} doesn't fit in `i32`")))

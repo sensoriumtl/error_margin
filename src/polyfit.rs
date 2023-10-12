@@ -10,6 +10,7 @@ use crate::margin::Measurement;
 use crate::math::{outer_product, vandermonde};
 use crate::Result;
 
+/// Minimal description of the solution to a Polynomial regression problem.
 pub struct Polynomial<E> {
     /// Polynomial coefficients stored in order of ascending power
     coefficients: Vec<E>,
@@ -40,12 +41,18 @@ impl<E: Scalar> From<FitResult<E>> for Polynomial<E> {
 }
 
 impl<E> Polynomial<E> {
+    /// The degree of the [`Polynomial`]
+    ///
+    /// The degree of a [`Polynomial`] is the highest power present in the polynomial.
+    /// This is the length of the coefficients vector minus 1, as the first coefficient is the
+    /// zero-order term, describing the intercept.
     pub(crate) fn degree(&self) -> usize {
-        self.coefficients.len()
+        self.coefficients.len() - 1
     }
 }
 
 impl<E: Scalar> Polynomial<E> {
+    /// Evaluate the [`Polynomial`] at `value`
     pub(crate) fn evaluate_at(&self, value: E) -> E {
         self.coefficients
             .iter()
@@ -54,6 +61,13 @@ impl<E: Scalar> Polynomial<E> {
             .sum()
     }
 
+    /// Downcast the [`Polynomial`] to a [`Vec`] of coefficients.
+    ///
+    /// This method returns the coefficient vector of the polynomial as a [`Vec`] of
+    /// [`Measurement`] which contain the central values of the coefficients, along with the
+    /// associated standard deviation (if present). If there is no standard deviation associated
+    /// with the [`Polynomial`] it is set to `0`. Coefficients are returned in order of increasing
+    /// power, starting with the intercept.
     pub(crate) fn to_values(&self) -> Vec<Measurement<E>> {
         self.standard_deviation.as_ref().map_or_else(
             || {
@@ -77,12 +91,19 @@ impl<E: Scalar> Polynomial<E> {
 }
 
 #[derive(Clone)]
+/// Lower level struct describing the result of a polynomial regression.
 pub struct FitResult<E: Scalar> {
+    /// The vector of coefficients in order of increasing pow.
     solution: Array1<E>,
+    /// The covariance matrix between polynomial coefficients.
     covariance: Array2<E>,
+    /// Any singular values encountered in the fit.
     singular_values: Array1<E::Real>,
+    /// Rank of the fit.
     rank: i32,
+    /// Residual sum of squares after application of the estimator.
     residual_sum_of_squares: Option<Array0<E::Real>>,
+    /// The window of x-axis values used to carry out the fit.
     window: Range<E>,
 }
 
@@ -113,11 +134,21 @@ where
     E: Float + Scalar,
     StandardNormal: Distribution<E>,
 {
+    /// Generate a sample for the intercept coefficient
+    ///
+    /// A fit result contains the central values and  variances of the polynomial fit coefficients.
+    /// This function uses a random number generator `rng` to generate a sample from the zero-order
+    /// distribution. It assumes that the coefficient is normally distributed.
     pub(crate) fn sample_zero_order_coeff(&self, rng: &mut impl Rng) -> Result<E> {
         let dist = Normal::new(self.solution[0], Scalar::sqrt(self.covariance[[0, 0]]))?;
         Ok(dist.sample(rng))
     }
 
+    /// Generate a sample for all coefficients excluding the intercept.
+    ///
+    /// A fit result contains the central values and  variances of the polynomial fit coefficients.
+    /// This function uses a random number generator `rng` to generate a sample for all
+    /// coefficients except for the intercept assuming them to be normally distributed.
     pub(crate) fn sample_higher_order_coeffs(&self, rng: &mut impl Rng) -> Result<Array1<E>> {
         let mut result = Array1::zeros(self.solution.len() - 1);
         for (ii, result) in result.iter_mut().enumerate() {
@@ -133,23 +164,26 @@ where
 }
 
 impl<E: PartialOrd + Scalar> FitResult<E> {
+    /// Return `true` if `value` falls within the [`FitResult`] window of validity.
     pub fn window_contains(&self, value: &E) -> bool {
         self.window.contains(value)
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
-pub enum Scaling {
-    Scaled,
-    Unscaled,
-}
-
+/// Carries out a polynomial fit `y = \sum_{i = 0}^{degree} c_i x^i` to the data `x, y`.
+///
+/// This method recasts the nonlinear polynomial regression problem as degree+1-dimensional linear
+/// regression, using least-squares singular value decomposition to compute the polynomial
+/// coefficients.
+///
+/// If weights are provided the `y` values and rows are re-scaled accordingly. Additionally if
+/// weights are provided the covariance matrix is constructed, for this to be an accurate result
+/// the weights provided need to be the inverse of the variance of `y`.
 pub fn polyfit<E: Copy + Float + Lapack + MulAssign + PartialOrd + Scalar + ScalarOperand>(
     x: &[E],
     y: &[E],
     degree: usize,
     maybe_weights: Option<&[E]>,
-    _covariance: Scaling,
 ) -> Result<FitResult<E>> {
     if x.iter().any(|&ele| !ele.is_finite()) {
         return Err("x-elements contain infinite or NaN values".into());
@@ -233,7 +267,6 @@ pub fn polyfit<E: Copy + Float + Lapack + MulAssign + PartialOrd + Scalar + Scal
 #[cfg(test)]
 mod tests {
     use super::polyfit;
-    use super::Scaling;
 
     use ndarray_rand::rand::{Rng, SeedableRng};
     use rand_isaac::Isaac64Rng;
@@ -257,7 +290,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let result = polyfit(&x, &y, degree, None, Scaling::Scaled).unwrap();
+        let result = polyfit(&x, &y, degree, None).unwrap();
 
         for (coeff, fitted) in coeffs.into_iter().zip(result.solution.into_iter()) {
             approx::assert_relative_eq!(coeff, fitted, max_relative = 1e-10);
@@ -283,7 +316,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let result = polyfit(&x, &y, degree, None, Scaling::Scaled).unwrap();
+        let result = polyfit(&x, &y, degree, None).unwrap();
 
         for (coeff, fitted) in coeffs.into_iter().zip(result.solution.into_iter()) {
             approx::assert_relative_eq!(coeff, fitted, max_relative = 1e-10);

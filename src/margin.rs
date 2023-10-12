@@ -17,8 +17,13 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug)]
+/// A measurement with central value and uncertainty
+///
+/// TODO: Replace this with the `Normal` struct from the `distributions` module.
 pub struct Measurement<E> {
+    /// Central value of the distribution
     pub(crate) value: E,
+    /// Standard deviation of the distribution
     pub(crate) uncertainty: E,
 }
 
@@ -36,6 +41,7 @@ where
     E: Copy + std::fmt::Debug + Float,
     StandardNormal: Distribution<E>,
 {
+    /// Sample from a normally distributed [`Measurement`]
     pub(crate) fn sample(self, rng: &mut impl Rng) -> Result<E> {
         let dist = Normal::new(self.value, self.uncertainty)?;
         Ok(dist.sample(rng))
@@ -52,6 +58,21 @@ impl<E: Copy> From<&Measurement<E>> for NormalDistribution<E> {
 }
 
 impl<E: Lapack + Scalar + ScalarOperand> Measurement<E> {
+    /// Compute an unknown from a [`Measurement`] and [`Polynomial`]
+    ///
+    /// The unknown `y = f(x)` where `x` is the measurement and the function is the polynomial.
+    /// This function computes the value of `y` and the variance.
+    ///
+    /// It is assumed that [`Measurement`] is normally distributed, as are all the coefficients in
+    /// ['Polynomial`]. It is also assumed that the distribution of [`Measurement`] is uncorrelated
+    /// from those of [`Polynomial`].
+    ///
+    /// The expectation value of the unknown is the sum of the expectation values of each
+    /// coefficient of [`Polynomial`] multiplied by those of the distribution of [`Measurement`]
+    /// raised to the appropriate power
+    ///
+    /// The variance is the difference between the expectation of the square of this distribution
+    /// and the square of it's expectation.
     pub(crate) fn compute_unknown(&self, fit: &Polynomial<E>) -> Self {
         let measurement: NormalDistribution<E> = NormalDistribution::from(self);
         let coefficient_distributions: Vec<NormalDistribution<E>> = fit
@@ -60,6 +81,8 @@ impl<E: Lapack + Scalar + ScalarOperand> Measurement<E> {
             .map(NormalDistribution::from)
             .collect();
 
+        // The product distributions are those of the coefficients multiplied by those of the
+        // measurement raised to the power of the coefficient term.
         let product_distributions =
             coefficient_distributions
                 .iter()
@@ -76,6 +99,8 @@ impl<E: Lapack + Scalar + ScalarOperand> Measurement<E> {
                 });
 
         let weights = vec![E::one(); product_distributions.len()];
+
+        // The unknown is a mixture distribution of these uncorrelated products.
         let mixture: Mixture<E, UncorrelatedProduct<DistributionToPower<NormalDistribution<E>>>> =
             Mixture(
                 product_distributions
