@@ -36,7 +36,7 @@
 			gfortran
 			(pkgs.lib.getLib gfortran.cc)
 			openblas
-			# openssl
+			openssl
 			cpp-netlib
 			];
 		    commonArgs = {
