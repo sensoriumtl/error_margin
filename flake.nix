@@ -33,7 +33,6 @@
 
 		    nativeBuildInputs = with pkgs; [ rustToolchain pkg-config ];
 		    buildInputs = with pkgs; [
-			cmake
 			gfortran
 			(pkgs.lib.getLib gfortran.cc)
 			openblas
