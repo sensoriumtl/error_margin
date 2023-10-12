@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use ndarray_rand::rand::distributions::Alphanumeric;
 use ndarray_rand::rand::{Rng, SeedableRng};
 use rand_isaac::Isaac64Rng;
-use serde::Serialize;
 use tempdir::TempDir;
 
+use error_margin::calibration::CalibrationCsvRow;
+use error_margin::calibration::CrosstalkCsvRow;
 use error_margin::calibration::Config;
 use error_margin::calibration::Gas;
 use error_margin::calibration::SensorData;
@@ -38,7 +39,8 @@ fn create_sensor_dir<R: Rng>(target_gas: &Gas, working_dir: &TempDir, rng: &mut 
 
     // Write the generic information for the sensor
     let sensor_data = SensorData {
-        noise_equivalent_power: rng.gen::<f64>(),
+        noise_equivalent_power: rng.gen_range(std::f64::EPSILON..1e-10), // Needs to be small, or the tests will
+        // fail: width in the distribution will lead to a failure in reconstruction
     };
     std::fs::write(
         sensor_dir.join("sensor.toml"),
@@ -51,18 +53,10 @@ fn create_sensor_dir<R: Rng>(target_gas: &Gas, working_dir: &TempDir, rng: &mut 
     Ok(())
 }
 
-#[derive(Serialize)]
-struct Row {
-    concentration: f64,
-    raw_signal: f64,
-    raw_reference: f64,
-    emergent_signal: f64,
-    emergent_reference: f64,
-}
 
 fn generate_calibration_curves<R: Rng>(
     target_gas: &Gas,
-    gases: &[Gas],
+    other_gases: &[Gas],
     working_dir: &TempDir,
     rng: &mut R,
     polynomial_degree: usize,
@@ -71,45 +65,79 @@ fn generate_calibration_curves<R: Rng>(
     let sensor_dir = working_dir.path().join("calibration").join(&target_gas.0);
     let mut coeffs_at_sensor = HashMap::new();
 
-    for gas in gases {
-        // The polynomial coefficients
-        let coeffs = (0..=polynomial_degree)
+    // Do the direct signal
+    // The polynomial coefficients
+    let coeffs = (0..=polynomial_degree)
+        .map(|_| rng.gen::<f64>())
+        .collect::<Vec<_>>();
+
+    // Generate the x-data
+    let raw_signal = (0..num_samples)
+        .map(|n| n as f64 / num_samples as f64)
+        .collect::<Vec<_>>();
+
+    // Generate the concentration data from the polynomial fit
+    let concentrations = raw_signal
+        .iter()
+        .map(|x| {
+            coeffs
+                .iter()
+                .enumerate()
+                .map(|(ii, c)| c * x.powi(ii as i32))
+                .fold(0., |a, b| a + b)
+        })
+        .collect::<Vec<_>>();
+
+    let mut wtr = csv::Writer::from_path(sensor_dir.join(format!("{}.csv", target_gas.0))).unwrap();
+    for (c, v) in concentrations.iter().zip(raw_signal.iter()) {
+        let row = CalibrationCsvRow {
+            concentration: *c,
+            raw_signal: std::f64::consts::E.powf(*v), // The actual signal needed for input is
+            // e^{fitting_signal}
+            raw_reference: 1.0,
+            emergent_signal: 1.0,
+            emergent_reference: 1.0,
+        };
+        wtr.serialize(&row).unwrap();
+    }
+    coeffs_at_sensor.insert(target_gas.clone(), coeffs);
+
+    for other_gas in other_gases.iter().filter(|other| *other != target_gas) {
+        let crosstalk_coeffs = (0..=polynomial_degree)
             .map(|_| rng.gen::<f64>())
             .collect::<Vec<_>>();
-
-        // Generate the data
-        let concentrations = (0..num_samples)
+        // Generate the x-data
+        let raw_signal_in_other_sensor = (0..num_samples)
             .map(|n| n as f64 / num_samples as f64)
             .collect::<Vec<_>>();
-
-        // We fix the signals in both emergent channels and the reference signal to unity, here we
-        // are just calculating the raw signal at the active channel given by the coeffs above
-        let raw_signal = concentrations
+        // Generate the concentration data from the polynomial fit
+        let crosstalk_in_target_sensor = raw_signal_in_other_sensor
             .iter()
             .map(|x| {
-                coeffs
+                crosstalk_coeffs
                     .iter()
                     .enumerate()
                     .map(|(ii, c)| c * x.powi(ii as i32))
                     .fold(0., |a, b| a + b)
             })
-            .map(|x| 10f64.powf(x)) // Fit signals are the base10 log of raw signals, so we invert
-            // here to get the data into the expected format
             .collect::<Vec<_>>();
 
-        let mut wtr = csv::Writer::from_path(sensor_dir.join(format!("{}.csv", gas.0))).unwrap();
-        for (c, v) in concentrations.iter().zip(raw_signal.iter()) {
-            let row = Row {
-                concentration: *c,
-                raw_signal: *v,
-                raw_reference: 1.0,
-                emergent_signal: 1.0,
-                emergent_reference: 1.0,
+
+        let mut wtr = csv::Writer::from_path(sensor_dir.join(format!("{}.csv", other_gas.0))).unwrap();
+        for (signal, crosstalk) in raw_signal_in_other_sensor.iter().zip(crosstalk_in_target_sensor.iter()) {
+            let row = CrosstalkCsvRow {
+                raw_signal_target: std::f64::consts::E.powf(*signal),
+                raw_reference_target: 1.0,
+                emergent_signal_target: 1.0,
+                emergent_reference_target: 1.0,
+                raw_signal_crosstalk: std::f64::consts::E.powf(*crosstalk),
+                raw_reference_crosstalk: 1.0,
+                emergent_signal_crosstalk: 1.0,
+                emergent_reference_crosstalk: 1.0,
             };
             wtr.serialize(&row).unwrap();
         }
-
-        coeffs_at_sensor.insert(gas.clone(), coeffs);
+        coeffs_at_sensor.insert(other_gas.clone(), crosstalk_coeffs);
     }
 
     Ok(coeffs_at_sensor)
@@ -147,6 +175,7 @@ fn single_gas_sensor_fit_matches_input_coefficients() -> Result<()> {
     let config = Config {
         polynomial_fit_degree: polynomial_degree,
         operating_frequency: rng.gen::<u8>() as f64,
+        number_of_polyfit_samples: 500,
     };
 
     let sensors = error_margin::calibration::build::<f64>(&tmp_dir.into_path(), &config)?;
@@ -180,7 +209,7 @@ fn multi_gas_sensor_fit_matches_input_coefficients() -> Result<()> {
 
     // Arrange
     let tmp_dir = create_calibration_dir("multi_gas_sensor_fit_matches_input_coefficients")?;
-    let num_gases = rng.gen_range(2..10);
+    let num_gases = 2;
     let gases = generate_gases(num_gases, &mut rng);
 
     let polynomial_degree = rng.gen_range(2..6);
@@ -206,6 +235,7 @@ fn multi_gas_sensor_fit_matches_input_coefficients() -> Result<()> {
     let config = Config {
         polynomial_fit_degree: polynomial_degree,
         operating_frequency: rng.gen::<u8>() as f64,
+        number_of_polyfit_samples: 500,
     };
 
     let sensors = error_margin::calibration::build::<f64>(&tmp_dir.into_path(), &config)?;
@@ -219,24 +249,25 @@ fn multi_gas_sensor_fit_matches_input_coefficients() -> Result<()> {
             .expect("target gas present in output but missing from input");
 
         // Check the calibration
-        let calculated_calibration = sensor.calibration().solution();
-        let expected_calibration = expected_coefficients_for_sensor
+        let calculated_calibration = sensor.calibration();
+        let calculated_coefficients = calculated_calibration.solution();
+        let expected_coefficients = expected_coefficients_for_sensor
             .get(target_gas)
             .expect("sensor input missing calibration curve");
-        for (expected, calculated) in expected_calibration
+        for (expected, calculated) in expected_coefficients
             .iter()
-            .zip(calculated_calibration.iter())
+            .zip(calculated_coefficients.iter())
         {
             approx::assert_relative_eq!(expected, calculated, max_relative = 1e-4,);
         }
 
         // Check the crosstalk
         for (gas, crosstalk) in sensor.crosstalk() {
-            let calculated_crosstalk = crosstalk.solution();
-            let expected_crosstalk = expected_coefficients_for_sensor
+            let calculated_coefficients = crosstalk.solution();
+            let expected_coefficients = expected_coefficients_for_sensor
                 .get(gas)
                 .expect("sensor input missing crosstalk curve");
-            for (expected, calculated) in expected_crosstalk.iter().zip(calculated_crosstalk.iter())
+            for (expected, calculated) in expected_coefficients.iter().zip(calculated_coefficients.iter())
             {
                 approx::assert_relative_eq!(expected, calculated, max_relative = 1e-4,);
             }

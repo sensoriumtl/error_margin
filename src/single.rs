@@ -99,6 +99,19 @@ mod test {
         let polynomial: GeneratedPolynomial<DEGREE> =
             generate_polynomial(&mut rng, num_samples, window);
 
+        let concentration = polynomial.y.clone();
+        let raw_measurements: Vec<Measurement<f64>> = polynomial.x.clone()
+                .into_iter()
+                .map(|ln_signal| Measurement {
+                    raw_signal: std::f64::consts::E.powf(ln_signal),
+                    raw_reference: 1.0,
+                    emergent_signal: 1.0,
+                    emergent_reference: 1.0,
+                })
+                .collect();
+
+        let x = raw_measurements.iter().map(Measurement::scaled).collect::<Vec<_>>();
+
         let target = Gas((&mut rng)
             .sample_iter(Alphanumeric)
             .take(3)
@@ -107,34 +120,25 @@ mod test {
 
         let calibration = CalibrationData {
             gas: target.clone(),
-            concentration: polynomial.x.clone(),
-            raw_measurements: polynomial
-                .y
-                .clone()
-                .into_iter()
-                .map(|log_signal| Measurement {
-                    raw_signal: 10f64.powf(log_signal),
-                    raw_reference: 1.0,
-                    emergent_signal: 1.0,
-                    emergent_reference: 1.0,
-                })
-                .collect(),
+            concentration: concentration.clone(),
+            raw_measurements,
         };
 
-        let sensor = SensorBuilder::new(target, 1e-5, rng.gen(), DEGREE - 1)
+        let num_fit_samples = 300;
+
+        let sensor = SensorBuilder::new(target, 1e-10, rng.gen(), DEGREE - 1, num_fit_samples)
             .with_calibration(calibration)
             .build()?;
 
-        for (value, actual) in polynomial
-            .x
+        for (value, actual) in x
             .into_iter()
-            .zip(polynomial.y.into_iter())
+            .zip(concentration)
             .skip(1)
             .take_while(|(x, _)| sensor.calibration().window_contains(x))
         {
             let measurement = crate::margin::Measurement {
                 value,
-                uncertainty: value * 1e-5,
+                uncertainty: value * 1e-10,
             };
             let reconstruction = reconstruct(&measurement, &sensor);
             approx::assert_relative_eq!(actual, reconstruction.value, max_relative = 1e-10);
@@ -157,39 +161,43 @@ mod test {
         let polynomial: GeneratedPolynomial<DEGREE> =
             generate_polynomial(&mut rng, num_samples, window);
 
+        let concentration = polynomial.y.clone();
+        let raw_measurements: Vec<Measurement<f64>> = polynomial.x.clone()
+                .into_iter()
+                .map(|ln_signal| Measurement {
+                    raw_signal: std::f64::consts::E.powf(ln_signal),
+                    raw_reference: 1.0,
+                    emergent_signal: 1.0,
+                    emergent_reference: 1.0,
+                })
+                .collect();
+
         let target = Gas((&mut rng)
             .sample_iter(Alphanumeric)
             .take(3)
             .map(char::from)
             .collect::<String>());
 
+        let x = raw_measurements.iter().map(Measurement::scaled).collect::<Vec<_>>();
+
         let calibration = CalibrationData {
             gas: target.clone(),
-            concentration: polynomial.x.clone(),
-            raw_measurements: polynomial
-                .y
-                .clone()
-                .into_iter()
-                .map(|log_signal| Measurement {
-                    raw_signal: 10f64.powf(log_signal),
-                    raw_reference: 1.0,
-                    emergent_signal: 1.0,
-                    emergent_reference: 1.0,
-                })
-                .collect(),
+            concentration: concentration.clone(),
+            raw_measurements,
         };
 
+
+        let num_fit_samples = 300;
+
         // TODO: Sensor has a different degree, to that in the generated polynomial
-        let sensor = SensorBuilder::new(target, 0.1, rng.gen(), DEGREE - 1)
+        let sensor = SensorBuilder::new(target, 0.1, rng.gen(), DEGREE - 1, num_fit_samples)
             .with_calibration(calibration)
             .build()?;
 
-        let mut writer = csv::Writer::from_path("data.csv").unwrap();
 
-        for (value, actual) in polynomial
-            .x
+        for (value, actual) in x
             .into_iter()
-            .zip(polynomial.y.into_iter())
+            .zip(concentration)
             .skip(1)
             .take_while(|(x, _)| sensor.calibration().window_contains(x))
         {
@@ -199,14 +207,6 @@ mod test {
             };
             let reconstruction = reconstruct(&measurement, &sensor);
             assert!((actual - reconstruction.value) < reconstruction.uncertainty);
-
-            writer
-                .write_record(&[
-                    format!("{value}"),
-                    format!("{}", reconstruction.value),
-                    format!("{}", reconstruction.uncertainty),
-                ])
-                .unwrap();
         }
 
         Ok(())

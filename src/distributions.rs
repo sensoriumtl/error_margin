@@ -4,7 +4,7 @@ use ndarray_linalg::Scalar;
 #[derive(Clone, Copy)]
 /// A normal distribution
 ///
-/// We assume the *signal* measured in the system is characterised by a log10-normal distribution. This
+/// We assume the *signal* measured in the system is characterised by a ln-normal distribution. This
 /// lets us consider the signal (and fitting variables) to be characterised by a Normal
 /// distribution.
 ///

@@ -91,7 +91,7 @@ fn compute_central_value<
                 target,
                 Measurement {
                     value,
-                    uncertainty: E::zero(),
+                    uncertainty: E::zero(), // Uncertainty cannot be determined from 1 sample
                 },
             )
         })
@@ -212,7 +212,7 @@ mod tests {
     use rand_isaac::Isaac64Rng;
 
     use crate::{
-        calibration::{CalibrationData, Gas, Measurement, SensorBuilder},
+        calibration::{CalibrationData, CrosstalkData, Gas, Measurement, SensorBuilder},
         multi::{correct, Strategy},
         Result,
     };
@@ -273,8 +273,8 @@ mod tests {
 
         let num_samples = rng.gen_range(10..255);
 
-        let start = rng.gen();
-        let end = rng.gen_range(2.0..10.0) * start;
+        let start = 0.0;
+        let end = 1.0;
         let window = Range { start, end };
 
         let targets = (0..num_sensors)
@@ -290,14 +290,17 @@ mod tests {
         let mut sensors = HashMap::new();
         let mut measurements = HashMap::new();
 
+        let num_fit_samples = 1;
+
         // Generate a dummy polynomial, we do this because in this test all polynomials have the
-        // same x-axis. This allows us to generate `signal_in_channel` which
+        // same x-axis. This allows us to generate `signal_in_channel`
         let polynomial: GeneratedPolynomial<DEGREE> =
             generate_polynomial(&mut rng, num_samples, window.clone());
         let sample_idxs = targets
             .iter()
             .map(|target| (target, rng.gen_range(0..num_samples)))
             .collect::<HashMap<_, _>>();
+        // The input signal in the channel, ie: what we would observe without crosstalk
         let input_signal_in_channel = sample_idxs
             .iter()
             .map(|(target, idx)| (*target, polynomial.x[*idx]))
@@ -313,13 +316,13 @@ mod tests {
             // required.
             let calibration = CalibrationData {
                 gas: target.clone(),
-                concentration: polynomial.x.clone(),
+                concentration: polynomial.y.clone(),
                 raw_measurements: polynomial
-                    .y
+                    .x
                     .clone()
                     .into_iter()
-                    .map(|log_signal| Measurement {
-                        raw_signal: 10f64.powf(log_signal),
+                    .map(|ln_signal| Measurement {
+                        raw_signal: std::f64::consts::E.powf(ln_signal),
                         raw_reference: 1.0,
                         emergent_signal: 1.0,
                         emergent_reference: 1.0,
@@ -327,7 +330,7 @@ mod tests {
                     .collect(),
             };
 
-            let mut sensor = SensorBuilder::new(target.clone(), rng.gen(), rng.gen(), DEGREE - 1)
+            let mut sensor = SensorBuilder::new(target.clone(), 1e-10, rng.gen(), DEGREE - 1, num_fit_samples)
                 .with_calibration(calibration);
 
             // The measurement is the sum of the `input_signal_in_channel`, which is the true value
@@ -337,15 +340,25 @@ mod tests {
             for cross_target in targets.iter().filter(|gas| *gas != target) {
                 let polynomial: GeneratedPolynomial<DEGREE> =
                     generate_polynomial(&mut rng, num_samples, window.clone());
-                let crosstalk = CalibrationData {
-                    gas: cross_target.clone(),
-                    concentration: polynomial.x.clone(),
-                    raw_measurements: polynomial
+                let crosstalk = CrosstalkData {
+                    target_gas: cross_target.clone(),
+                    crosstalk_gas: target.clone(),
+                    signal: polynomial.x
+                        .clone()
+                        .into_iter()
+                        .map(|ln_signal| Measurement {
+                            raw_signal: std::f64::consts::E.powf(ln_signal),
+                            raw_reference: 1.0,
+                            emergent_signal: 1.0,
+                            emergent_reference: 1.0,
+                        })
+                        .collect(),
+                    crosstalk: polynomial
                         .y
                         .clone()
                         .into_iter()
-                        .map(|log_signal| Measurement {
-                            raw_signal: 10f64.powf(log_signal),
+                        .map(|ln_signal| Measurement {
+                            raw_signal: std::f64::consts::E.powf(ln_signal),
                             raw_reference: 1.0,
                             emergent_signal: 1.0,
                             emergent_reference: 1.0,
@@ -422,6 +435,7 @@ mod tests {
 
         let mut sensors = HashMap::new();
         let mut measurements = HashMap::new();
+        let num_fit_samples = 500;
 
         // Generate a dummy polynomial, we do this because in this test all polynomials have the
         // same x-axis. This allows us to generate `signal_in_channel` which
@@ -436,6 +450,7 @@ mod tests {
             .map(|(target, idx)| (*target, polynomial.x[*idx]))
             .collect::<HashMap<_, _>>();
 
+
         for target in &targets {
             let mut measurement = 0.0;
             let polynomial: GeneratedPolynomial<DEGREE> =
@@ -446,13 +461,13 @@ mod tests {
             // required.
             let calibration = CalibrationData {
                 gas: target.clone(),
-                concentration: polynomial.x.clone(),
+                concentration: polynomial.y.clone(),
                 raw_measurements: polynomial
-                    .y
+                    .x
                     .clone()
                     .into_iter()
-                    .map(|log_signal| Measurement {
-                        raw_signal: 10f64.powf(log_signal),
+                    .map(|ln_signal| Measurement {
+                        raw_signal: std::f64::consts::E.powf(ln_signal),
                         raw_reference: 1.0,
                         emergent_signal: 1.0,
                         emergent_reference: 1.0,
@@ -460,7 +475,7 @@ mod tests {
                     .collect(),
             };
 
-            let mut sensor = SensorBuilder::new(target.clone(), rng.gen(), rng.gen(), DEGREE - 1)
+            let mut sensor = SensorBuilder::new(target.clone(), 1e-5, rng.gen(), DEGREE - 1, num_fit_samples)
                 .with_calibration(calibration);
 
             // The measurement is the sum of the `input_signal_in_channel`, which is the true value
@@ -470,15 +485,26 @@ mod tests {
             for cross_target in targets.iter().filter(|gas| *gas != target) {
                 let polynomial: GeneratedPolynomial<DEGREE> =
                     generate_polynomial(&mut rng, num_samples, window.clone());
-                let crosstalk = CalibrationData {
-                    gas: cross_target.clone(),
-                    concentration: polynomial.x.clone(),
-                    raw_measurements: polynomial
+                let crosstalk = CrosstalkData {
+                    target_gas: cross_target.clone(),
+                    crosstalk_gas: target.clone(),
+                    signal: polynomial
+                        .x
+                        .clone()
+                        .into_iter()
+                        .map(|ln_signal| Measurement {
+                            raw_signal: std::f64::consts::E.powf(ln_signal),
+                            raw_reference: 1.0,
+                            emergent_signal: 1.0,
+                            emergent_reference: 1.0,
+                        })
+                        .collect(),
+                    crosstalk: polynomial
                         .y
                         .clone()
                         .into_iter()
-                        .map(|log_signal| Measurement {
-                            raw_signal: 10f64.powf(log_signal),
+                        .map(|ln_signal| Measurement {
+                            raw_signal: std::f64::consts::E.powf(ln_signal),
                             raw_reference: 1.0,
                             emergent_signal: 1.0,
                             emergent_reference: 1.0,
@@ -521,6 +547,7 @@ mod tests {
             let expected_value = input_signal_in_channel
                 .get(&target)
                 .expect("value missing from expectations map");
+            println!("{:?}, {:?}", calculated, expected_value);
             assert!((calculated.value - expected_value).abs() < calculated.uncertainty);
         }
 
