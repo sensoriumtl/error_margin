@@ -3,10 +3,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::{collections::HashMap, marker::PhantomData};
 
-use ndarray::{ScalarOperand, Array1};
+use ndarray::{Array1, ScalarOperand};
 use ndarray_linalg::{Lapack, Scalar};
-use ndarray_rand::rand::{SeedableRng, Rng};
-use ndarray_rand::rand_distr::{Normal, StandardNormal, Distribution};
+use ndarray_rand::rand::{Rng, SeedableRng};
+use ndarray_rand::rand_distr::{Distribution, Normal, StandardNormal};
 use num_traits::real::Real;
 use num_traits::Float;
 use rand_isaac::Isaac64Rng;
@@ -26,10 +26,7 @@ pub struct Config<E> {
 /// # Errors
 /// Returns an error if the file system has an incorrect structure, files have incorrect structure
 /// or if the polynomial fit fails.
-pub fn build<E>(
-    working_directory: &Path,
-    config: &Config<E>,
-) -> Result<Vec<Sensor<E>>>
+pub fn build<E>(working_directory: &Path, config: &Config<E>) -> Result<Vec<Sensor<E>>>
 where
     E: Float + Lapack + Scalar + ScalarOperand + Real,
     StandardNormal: Distribution<E>,
@@ -208,14 +205,14 @@ where
         let mut crosstalk = HashMap::new();
 
         let calibration_data = self.raw_calibration_data.unwrap(); // Safe as we cannot built without
-        // this being `Set`. If not set we cannot constuct the type
+                                                                   // this being `Set`. If not set we cannot constuct the type
         let calibration = generate_fit(
             &calibration_data,
             self.noise_equivalent_power,
             self.operation_frequency,
             self.number_of_polyfit_samples,
             self.polynomial_degree,
-            &mut rng
+            &mut rng,
         )?;
 
         for crosstalk_data in self.raw_crosstalk_data {
@@ -225,7 +222,7 @@ where
                 self.operation_frequency,
                 self.number_of_polyfit_samples,
                 self.polynomial_degree,
-                &mut rng
+                &mut rng,
             )?;
 
             crosstalk.insert(crosstalk_data.target_gas.clone(), fit);
@@ -255,7 +252,11 @@ where
 {
     let mut fits = Vec::new();
     for _ in 0..number_of_samples {
-        let data = calibration_data.generate_fitting_data(noise_equivalent_power, operating_frequency, rng)?;
+        let data = calibration_data.generate_fitting_data(
+            noise_equivalent_power,
+            operating_frequency,
+            rng,
+        )?;
         let fit = polyfit(
             &data.x,
             &data.y,
@@ -266,13 +267,17 @@ where
         fits.push(fit);
     }
 
-    let means = fits.iter()
-        .map(|fit| fit.solution())
+    let means = fits
+        .iter()
+        .map(crate::polyfit::FitResult::solution)
         .fold(Array1::zeros(degree + 1), |a, b| a + b)
         .mapv(|summed: E| summed / E::from(fits.len()).unwrap());
-    let variance = fits.iter()
-        .map(|fit| fit.solution())
-        .fold(Array1::zeros(degree + 1), |a, b| a + (b - &means).mapv(|x| Scalar::powi(x, 2)))
+    let variance = fits
+        .iter()
+        .map(crate::polyfit::FitResult::solution)
+        .fold(Array1::zeros(degree + 1), |a, b| {
+            a + (b - &means).mapv(|x| Scalar::powi(x, 2))
+        })
         .mapv(|summed: E| summed / E::from(fits.len() - 1).unwrap());
 
     let mut fit = fits.pop().unwrap();
@@ -296,7 +301,11 @@ where
 {
     let mut fits = Vec::new();
     for _ in 0..number_of_samples {
-        let data = crosstalk_data.generate_fitting_data(noise_equivalent_power, operating_frequency, rng)?;
+        let data = crosstalk_data.generate_fitting_data(
+            noise_equivalent_power,
+            operating_frequency,
+            rng,
+        )?;
         let fit = polyfit(
             &data.x,
             &data.y,
@@ -307,14 +316,18 @@ where
         fits.push(fit);
     }
 
-    let means = fits.iter()
-        .map(|fit| fit.solution())
+    let means = fits
+        .iter()
+        .map(crate::polyfit::FitResult::solution)
         .fold(Array1::zeros(degree + 1), |a, b| a + b)
         .mapv(|summed: E| summed / E::from(fits.len()).unwrap());
 
-    let variance = fits.iter()
-        .map(|fit| fit.solution())
-        .fold(Array1::zeros(degree + 1), |a, b| a + (b - &means).mapv(|x| Scalar::powi(x, 2)))
+    let variance = fits
+        .iter()
+        .map(crate::polyfit::FitResult::solution)
+        .fold(Array1::zeros(degree + 1), |a, b| {
+            a + (b - &means).mapv(|x| Scalar::powi(x, 2))
+        })
         .mapv(|summed: E| summed / E::from(fits.len() - 1).unwrap());
 
     let mut fit = fits.pop().unwrap();
@@ -342,6 +355,7 @@ pub(crate) struct CrosstalkData<E: Scalar> {
     pub(crate) crosstalk: Vec<Measurement<E>>,
 }
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(Deserialize, Serialize)]
 pub struct CalibrationCsvRow<E> {
     pub concentration: E,
@@ -449,7 +463,7 @@ impl<E: Scalar + Copy + DeserializeOwned> CrosstalkData<E> {
 
         Ok(Self {
             target_gas: Gas(target_gas),
-            crosstalk_gas: crosstalk_gas,
+            crosstalk_gas,
             signal,
             crosstalk,
         })
@@ -465,7 +479,9 @@ pub struct Measurement<E: Scalar> {
 
 impl<E: Real + Scalar> Measurement<E> {
     pub(crate) fn scaled(&self) -> E {
-        Scalar::ln(self.raw_signal / self.emergent_signal * self.emergent_reference / self.emergent_signal)
+        Scalar::ln(
+            self.raw_signal / self.emergent_signal * self.emergent_reference / self.emergent_signal,
+        )
     }
 
     // The weights are the inverse of the variance of the measurement
@@ -484,7 +500,12 @@ where
     E: Scalar + Float,
     StandardNormal: Distribution<E>,
 {
-    fn sample(&self, rng: &mut impl Rng, noise_equivalent_power: E, operation_frequency: E) -> Result<E> {
+    fn sample(
+        &self,
+        rng: &mut impl Rng,
+        noise_equivalent_power: E,
+        operation_frequency: E,
+    ) -> Result<E> {
         let mean = self.scaled();
         let weight = self.weight(noise_equivalent_power, operation_frequency);
         let std_dev = Scalar::sqrt(E::one() / weight);
@@ -509,19 +530,17 @@ where
         &self,
         noise_equivalent_power: E,
         operation_frequency: E,
-        rng: &mut impl Rng
+        rng: &mut impl Rng,
     ) -> Result<PolyFitInput<E>> {
-        Ok(
-            PolyFitInput {
-                x: self
-                    .raw_measurements
-                    .iter()
-                    .map(|raw| raw.sample(rng, noise_equivalent_power, operation_frequency))
-                    .collect::<Result<_>>()?,
-                y: self.concentration.clone(),
-                w: None,
-            }
-        )
+        Ok(PolyFitInput {
+            x: self
+                .raw_measurements
+                .iter()
+                .map(|raw| raw.sample(rng, noise_equivalent_power, operation_frequency))
+                .collect::<Result<_>>()?,
+            y: self.concentration.clone(),
+            w: None,
+        })
     }
 }
 
@@ -534,25 +553,25 @@ where
         &self,
         noise_equivalent_power: E,
         operation_frequency: E,
-        rng: &mut impl Rng
+        rng: &mut impl Rng,
     ) -> Result<PolyFitInput<E>> {
-        Ok(
-            PolyFitInput {
-                x: self
-                    .signal
-                    .iter()
-                    .map(|raw| raw.sample(rng, noise_equivalent_power, operation_frequency))
-                    .collect::<Result<_>>()?,
-                y: self
-                    .crosstalk
-                    .iter()
-                    .map(|raw| raw.sample(rng, noise_equivalent_power, operation_frequency))
-                    .collect::<Result<_>>()?,
-                w: Some(self.crosstalk
+        Ok(PolyFitInput {
+            x: self
+                .signal
+                .iter()
+                .map(|raw| raw.sample(rng, noise_equivalent_power, operation_frequency))
+                .collect::<Result<_>>()?,
+            y: self
+                .crosstalk
+                .iter()
+                .map(|raw| raw.sample(rng, noise_equivalent_power, operation_frequency))
+                .collect::<Result<_>>()?,
+            w: Some(
+                self.crosstalk
                     .iter()
                     .map(|raw| raw.weight(noise_equivalent_power, operation_frequency))
-                    .collect()),
-            }
-        )
+                    .collect(),
+            ),
+        })
     }
 }

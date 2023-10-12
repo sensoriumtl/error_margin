@@ -263,20 +263,18 @@ mod tests {
         GeneratedPolynomial { x, y, coeffs }
     }
 
+    // TODO: Split out the arrangement phase of this function, remove the `allow`
+    #[allow(clippy::too_many_lines)]
     #[test]
     fn errors_are_corrected_within_tolerance_for_two_sensor_system() -> Result<()> {
         const DEGREE: usize = 3;
         let seed = 40;
         let mut rng = Isaac64Rng::seed_from_u64(seed);
-
         let num_sensors = 2;
-
         let num_samples = rng.gen_range(10..255);
-
         let start = 0.0;
         let end = 1.0;
         let window = Range { start, end };
-
         let targets = (0..num_sensors)
             .map(|_| {
                 Gas((&mut rng)
@@ -286,14 +284,10 @@ mod tests {
                     .collect::<String>())
             })
             .collect::<Vec<_>>();
-
         let mut sensors = HashMap::new();
         let mut measurements = HashMap::new();
-
         let num_fit_samples = 1;
 
-        // Generate a dummy polynomial, we do this because in this test all polynomials have the
-        // same x-axis. This allows us to generate `signal_in_channel`
         let polynomial: GeneratedPolynomial<DEGREE> =
             generate_polynomial(&mut rng, num_samples, window.clone());
         let sample_idxs = targets
@@ -322,7 +316,7 @@ mod tests {
                     .clone()
                     .into_iter()
                     .map(|ln_signal| Measurement {
-                        raw_signal: std::f64::consts::E.powf(ln_signal),
+                        raw_signal: ln_signal.exp(),
                         raw_reference: 1.0,
                         emergent_signal: 1.0,
                         emergent_reference: 1.0,
@@ -330,8 +324,14 @@ mod tests {
                     .collect(),
             };
 
-            let mut sensor = SensorBuilder::new(target.clone(), 1e-10, rng.gen(), DEGREE - 1, num_fit_samples)
-                .with_calibration(calibration);
+            let mut sensor = SensorBuilder::new(
+                target.clone(),
+                1e-10,
+                rng.gen(),
+                DEGREE - 1,
+                num_fit_samples,
+            )
+            .with_calibration(calibration);
 
             // The measurement is the sum of the `input_signal_in_channel`, which is the true value
             // of the signal
@@ -343,11 +343,12 @@ mod tests {
                 let crosstalk = CrosstalkData {
                     target_gas: cross_target.clone(),
                     crosstalk_gas: target.clone(),
-                    signal: polynomial.x
+                    signal: polynomial
+                        .x
                         .clone()
                         .into_iter()
                         .map(|ln_signal| Measurement {
-                            raw_signal: std::f64::consts::E.powf(ln_signal),
+                            raw_signal: ln_signal.exp(),
                             raw_reference: 1.0,
                             emergent_signal: 1.0,
                             emergent_reference: 1.0,
@@ -358,7 +359,7 @@ mod tests {
                         .clone()
                         .into_iter()
                         .map(|ln_signal| Measurement {
-                            raw_signal: std::f64::consts::E.powf(ln_signal),
+                            raw_signal: ln_signal.exp(),
                             raw_reference: 1.0,
                             emergent_signal: 1.0,
                             emergent_reference: 1.0,
@@ -387,7 +388,6 @@ mod tests {
         }
 
         // Act
-
         let initial_guess = None;
         let corrected = correct(
             &measurements,
@@ -403,24 +403,20 @@ mod tests {
                 .expect("value missing from expectations map");
             approx::assert_relative_eq!(calculated.value, expected_value, max_relative = 1e-10);
         }
-
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     #[test]
     fn reasonable_bounds_are_found_for_two_sensor_system_with_sampling() -> Result<()> {
         const DEGREE: usize = 3;
         let seed = 40;
         let mut rng = Isaac64Rng::seed_from_u64(seed);
-
         let num_sensors = 2;
-
         let num_samples = rng.gen_range(10..255);
-
         let start = rng.gen();
         let end = rng.gen_range(2.0..10.0) * start;
         let window = Range { start, end };
-
         let fractional_spread = rng.gen_range(1e-4..1e-2);
 
         let targets = (0..num_sensors)
@@ -437,8 +433,6 @@ mod tests {
         let mut measurements = HashMap::new();
         let num_fit_samples = 500;
 
-        // Generate a dummy polynomial, we do this because in this test all polynomials have the
-        // same x-axis. This allows us to generate `signal_in_channel` which
         let polynomial: GeneratedPolynomial<DEGREE> =
             generate_polynomial(&mut rng, num_samples, window.clone());
         let sample_idxs = targets
@@ -449,7 +443,6 @@ mod tests {
             .iter()
             .map(|(target, idx)| (*target, polynomial.x[*idx]))
             .collect::<HashMap<_, _>>();
-
 
         for target in &targets {
             let mut measurement = 0.0;
@@ -467,7 +460,7 @@ mod tests {
                     .clone()
                     .into_iter()
                     .map(|ln_signal| Measurement {
-                        raw_signal: std::f64::consts::E.powf(ln_signal),
+                        raw_signal: ln_signal.exp(),
                         raw_reference: 1.0,
                         emergent_signal: 1.0,
                         emergent_reference: 1.0,
@@ -475,8 +468,9 @@ mod tests {
                     .collect(),
             };
 
-            let mut sensor = SensorBuilder::new(target.clone(), 1e-5, rng.gen(), DEGREE - 1, num_fit_samples)
-                .with_calibration(calibration);
+            let mut sensor =
+                SensorBuilder::new(target.clone(), 1e-5, rng.gen(), DEGREE - 1, num_fit_samples)
+                    .with_calibration(calibration);
 
             // The measurement is the sum of the `input_signal_in_channel`, which is the true value
             // of the signal
@@ -493,7 +487,7 @@ mod tests {
                         .clone()
                         .into_iter()
                         .map(|ln_signal| Measurement {
-                            raw_signal: std::f64::consts::E.powf(ln_signal),
+                            raw_signal: ln_signal.exp(),
                             raw_reference: 1.0,
                             emergent_signal: 1.0,
                             emergent_reference: 1.0,
@@ -504,7 +498,7 @@ mod tests {
                         .clone()
                         .into_iter()
                         .map(|ln_signal| Measurement {
-                            raw_signal: std::f64::consts::E.powf(ln_signal),
+                            raw_signal: ln_signal.exp(),
                             raw_reference: 1.0,
                             emergent_signal: 1.0,
                             emergent_reference: 1.0,
@@ -513,7 +507,6 @@ mod tests {
                 };
 
                 sensor = sensor.with_crosstalk(crosstalk);
-
                 // The x-axis for this crosstalk in the sensor `target` is the signal in the
                 // sensor `cross_target`.
                 let sample_idx = sample_idxs.get(cross_target).unwrap().to_owned();
@@ -521,7 +514,6 @@ mod tests {
                 // crosstalk contributions
                 measurement += polynomial.y[sample_idx];
             }
-
             sensors.insert(target.clone(), sensor.build()?);
             measurements.insert(
                 target.clone(),
@@ -533,7 +525,6 @@ mod tests {
         }
 
         // Act
-
         let initial_guess = None;
         let corrected = correct(
             &measurements,
@@ -547,7 +538,6 @@ mod tests {
             let expected_value = input_signal_in_channel
                 .get(&target)
                 .expect("value missing from expectations map");
-            println!("{:?}, {:?}", calculated, expected_value);
             assert!((calculated.value - expected_value).abs() < calculated.uncertainty);
         }
 

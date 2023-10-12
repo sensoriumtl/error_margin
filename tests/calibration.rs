@@ -6,8 +6,8 @@ use rand_isaac::Isaac64Rng;
 use tempdir::TempDir;
 
 use error_margin::calibration::CalibrationCsvRow;
-use error_margin::calibration::CrosstalkCsvRow;
 use error_margin::calibration::Config;
+use error_margin::calibration::CrosstalkCsvRow;
 use error_margin::calibration::Gas;
 use error_margin::calibration::SensorData;
 use error_margin::Result;
@@ -40,7 +40,7 @@ fn create_sensor_dir<R: Rng>(target_gas: &Gas, working_dir: &TempDir, rng: &mut 
     // Write the generic information for the sensor
     let sensor_data = SensorData {
         noise_equivalent_power: rng.gen_range(std::f64::EPSILON..1e-10), // Needs to be small, or the tests will
-        // fail: width in the distribution will lead to a failure in reconstruction
+                                                                         // fail: width in the distribution will lead to a failure in reconstruction
     };
     std::fs::write(
         sensor_dir.join("sensor.toml"),
@@ -52,7 +52,6 @@ fn create_sensor_dir<R: Rng>(target_gas: &Gas, working_dir: &TempDir, rng: &mut 
 
     Ok(())
 }
-
 
 fn generate_calibration_curves<R: Rng>(
     target_gas: &Gas,
@@ -122,9 +121,12 @@ fn generate_calibration_curves<R: Rng>(
             })
             .collect::<Vec<_>>();
 
-
-        let mut wtr = csv::Writer::from_path(sensor_dir.join(format!("{}.csv", other_gas.0))).unwrap();
-        for (signal, crosstalk) in raw_signal_in_other_sensor.iter().zip(crosstalk_in_target_sensor.iter()) {
+        let mut wtr =
+            csv::Writer::from_path(sensor_dir.join(format!("{}.csv", other_gas.0))).unwrap();
+        for (signal, crosstalk) in raw_signal_in_other_sensor
+            .iter()
+            .zip(crosstalk_in_target_sensor.iter())
+        {
             let row = CrosstalkCsvRow {
                 raw_signal_target: std::f64::consts::E.powf(*signal),
                 raw_reference_target: 1.0,
@@ -267,7 +269,9 @@ fn multi_gas_sensor_fit_matches_input_coefficients() -> Result<()> {
             let expected_coefficients = expected_coefficients_for_sensor
                 .get(gas)
                 .expect("sensor input missing crosstalk curve");
-            for (expected, calculated) in expected_coefficients.iter().zip(calculated_coefficients.iter())
+            for (expected, calculated) in expected_coefficients
+                .iter()
+                .zip(calculated_coefficients.iter())
             {
                 approx::assert_relative_eq!(expected, calculated, max_relative = 1e-4,);
             }

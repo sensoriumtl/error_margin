@@ -181,7 +181,6 @@ pub fn polyfit<E: Copy + Float + Lapack + MulAssign + PartialOrd + Scalar + Scal
         }
     }
 
-
     let scaling: Array1<E> = lhs
         .mapv(|val| Scalar::powi(val, 2))
         .sum_axis(Axis(0))
@@ -192,17 +191,15 @@ pub fn polyfit<E: Copy + Float + Lapack + MulAssign + PartialOrd + Scalar + Scal
     let solution = (&result.solution.t() / &scaling).t().to_owned();
 
     let covariance_matrix = if let Some(weights) = maybe_weights {
-        let variance_y = weights
-            .iter()
-            .map(|w| E::one() / *w)
-            .collect::<Array1<_>>();
+        let variance_y = weights.iter().map(|w| E::one() / *w).collect::<Array1<_>>();
         let variance_matrix = Array2::from_diag(&variance_y);
 
         let covariance_matrix = (lhs.t().dot(&lhs)).inv()?;
         let outer_prod_of_scaling = outer_product(&scaling, &scaling)?;
 
         let covariance_matrix = covariance_matrix / &outer_prod_of_scaling;
-        let covariance_matrix_core = lhs.t().dot(&variance_matrix.dot(&lhs)) * outer_prod_of_scaling;
+        let covariance_matrix_core =
+            lhs.t().dot(&variance_matrix.dot(&lhs)) * outer_prod_of_scaling;
         covariance_matrix.dot(&covariance_matrix_core.dot(&covariance_matrix))
     } else {
         let tmp = (lhs.t().dot(&lhs)).inv()?;

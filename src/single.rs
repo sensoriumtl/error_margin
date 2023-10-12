@@ -100,17 +100,21 @@ mod test {
             generate_polynomial(&mut rng, num_samples, window);
 
         let concentration = polynomial.y.clone();
-        let raw_measurements: Vec<Measurement<f64>> = polynomial.x.clone()
-                .into_iter()
-                .map(|ln_signal| Measurement {
-                    raw_signal: std::f64::consts::E.powf(ln_signal),
-                    raw_reference: 1.0,
-                    emergent_signal: 1.0,
-                    emergent_reference: 1.0,
-                })
-                .collect();
+        let raw_measurements: Vec<Measurement<f64>> = polynomial
+            .x
+            .into_iter()
+            .map(|ln_signal| Measurement {
+                raw_signal: ln_signal.exp(),
+                raw_reference: 1.0,
+                emergent_signal: 1.0,
+                emergent_reference: 1.0,
+            })
+            .collect();
 
-        let x = raw_measurements.iter().map(Measurement::scaled).collect::<Vec<_>>();
+        let x = raw_measurements
+            .iter()
+            .map(Measurement::scaled)
+            .collect::<Vec<_>>();
 
         let target = Gas((&mut rng)
             .sample_iter(Alphanumeric)
@@ -162,15 +166,16 @@ mod test {
             generate_polynomial(&mut rng, num_samples, window);
 
         let concentration = polynomial.y.clone();
-        let raw_measurements: Vec<Measurement<f64>> = polynomial.x.clone()
-                .into_iter()
-                .map(|ln_signal| Measurement {
-                    raw_signal: std::f64::consts::E.powf(ln_signal),
-                    raw_reference: 1.0,
-                    emergent_signal: 1.0,
-                    emergent_reference: 1.0,
-                })
-                .collect();
+        let raw_measurements: Vec<Measurement<f64>> = polynomial
+            .x
+            .into_iter()
+            .map(|ln_signal| Measurement {
+                raw_signal: ln_signal.exp(),
+                raw_reference: 1.0,
+                emergent_signal: 1.0,
+                emergent_reference: 1.0,
+            })
+            .collect();
 
         let target = Gas((&mut rng)
             .sample_iter(Alphanumeric)
@@ -178,7 +183,10 @@ mod test {
             .map(char::from)
             .collect::<String>());
 
-        let x = raw_measurements.iter().map(Measurement::scaled).collect::<Vec<_>>();
+        let x = raw_measurements
+            .iter()
+            .map(Measurement::scaled)
+            .collect::<Vec<_>>();
 
         let calibration = CalibrationData {
             gas: target.clone(),
@@ -186,14 +194,12 @@ mod test {
             raw_measurements,
         };
 
-
         let num_fit_samples = 300;
 
         // TODO: Sensor has a different degree, to that in the generated polynomial
         let sensor = SensorBuilder::new(target, 0.1, rng.gen(), DEGREE - 1, num_fit_samples)
             .with_calibration(calibration)
             .build()?;
-
 
         for (value, actual) in x
             .into_iter()
