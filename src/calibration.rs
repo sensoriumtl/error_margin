@@ -329,6 +329,14 @@ where
         })
         .mapv(|summed: E| summed / E::from(fits.len() - 1).unwrap());
 
+    let covariance = fits.iter()
+        .map(crate::polyfit::FitResult::solution)
+        .enumerate()
+        .cartesian_product(fits.iter()
+                            .map(crate::polyfit::FitResult::solution)
+                            .enumerate())
+        .map(|((ii, vi), (jj, vj))|
+
     let mut fit = fits.pop().unwrap();
     fit.set_solution(means);
     fit.set_variance(variance);
